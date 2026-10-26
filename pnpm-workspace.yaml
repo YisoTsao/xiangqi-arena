@@ -9,3 +9,8 @@ onlyBuiltDependencies:
 
 ignoredBuiltDependencies:
   - msgpackr-extract
+
+# colyseus lists the uWebSockets transport as a peer; pnpm would auto-install it
+# from a git+ssh URL, which fails on CI runners. We only use @colyseus/ws-transport.
+overrides:
+  "@colyseus/uwebsockets-transport": "-"
