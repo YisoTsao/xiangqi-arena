@@ -40,6 +40,18 @@
 
 ### 3.1 遊戲伺服器
 
+**Render（建議，已附 Blueprint）**
+
+1. 登入 [Render](https://dashboard.render.com) → **New → Blueprint** → 選擇本 repo。
+   Render 會讀取根目錄的 [`render.yaml`](../render.yaml)，建立 `xiangqi-arena-game-server`（免費方案、新加坡區）。
+2. 依提示填入 `CORS_ORIGINS`（前端正式網址，例如 `https://xiangqi-arena.vercel.app`）。
+   `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY` 不記錄戰績可以留空。
+3. 部署完成後，網址形如 `https://xiangqi-arena-game-server.onrender.com`；
+   前端要填的是 `wss://xiangqi-arena-game-server.onrender.com`。
+4. 開啟 `https://…onrender.com/healthz` 應回傳 `{"ok":true,…}`。
+
+**其他平台（手動設定）**
+
 ```bash
 # 建置
 pnpm --filter @xiangqi-arena/game-server build   # 產出 apps/game-server/dist/index.js

@@ -1,0 +1,30 @@
+# Render Blueprint：只部署遊戲伺服器（Colyseus）。前端放在 Vercel。
+# 使用方式見 docs/DEPLOYMENT.md §3.1。
+services:
+  - type: web
+    name: xiangqi-arena-game-server
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npx --yes pnpm@10.28.0 install --frozen-lockfile && npx --yes pnpm@10.28.0 --filter @xiangqi-arena/game-server build
+    startCommand: node apps/game-server/dist/index.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - apps/game-server/**
+        - packages/**
+        - pnpm-lock.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      # 前端正式網址，逗號分隔；在 Render 後台填入
+      - key: CORS_ORIGINS
+        sync: false
+      # 選填：要記錄戰績才需要。Service Role Key 只能放在這裡
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
