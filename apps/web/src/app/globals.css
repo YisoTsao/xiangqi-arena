@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+
+/* 色票對應 docs/ART_BIBLE.md：深色背景 + 溫暖金色點綴 */
+@theme {
+  --color-ink-950: #0d0b0a;
+  --color-ink-900: #141110;
+  --color-ink-850: #1a1614;
+  --color-ink-800: #221d1a;
+  --color-ink-700: #2e2723;
+  --color-ink-600: #3d342e;
+  --color-ink-400: #8b7d70;
+  --color-ink-300: #b3a597;
+  --color-ink-100: #efe6da;
+  --color-gold-300: #f3d38c;
+  --color-gold-400: #e3b55b;
+  --color-gold-500: #c9953b;
+  --color-gold-600: #a2742a;
+  --color-cinnabar-400: #e2574c;
+  --color-cinnabar-500: #c0362c;
+  --color-jade-400: #4f9a7d;
+  --color-jade-500: #2f6b55;
+  --font-serif:
+    'Noto Serif TC', 'Noto Serif CJK TC', 'Source Han Serif TC', 'Songti TC', 'PMingLiU', serif;
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei',
+    sans-serif;
+  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-glow: glow 2.4s ease-in-out infinite;
+  --animate-rays: rays 12s linear infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(227 181 91 / 0);
+  }
+  50% {
+    box-shadow: 0 0 24px 2px rgb(227 181 91 / 0.35);
+  }
+}
+@keyframes rays {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgb(227 181 91 / 0.08), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgb(47 107 85 / 0.08), transparent 60%),
+    var(--color-ink-950);
+}
+
+::selection {
+  background: rgb(227 181 91 / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+  backdrop-filter: blur(3px);
+}
