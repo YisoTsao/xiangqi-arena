@@ -205,11 +205,14 @@ export function HomeScreen() {
             <div>
               <div className="font-serif text-xl font-semibold">麻將</div>
               <div className="mt-1 text-sm text-ink-400">
-                台灣 16 張，打一將東風圈；線上房間即將開放
+                台灣 16 張，打一將東風圈；可以走進 3D 暮光遊樂館 1F 入座
               </div>
             </div>
           </div>
-          <div className="grid gap-2 sm:ml-auto sm:w-72">
+          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:w-72">
+            <Button variant="primary" onClick={() => router.push('/club')} data-testid="club-open">
+              <DoorOpen /> 走進麻將館
+            </Button>
             <Button
               variant="secondary"
               onClick={() => router.push('/mahjong/practice')}
