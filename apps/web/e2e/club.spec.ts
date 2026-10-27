@@ -4,24 +4,20 @@ import { expect, test } from '@playwright/test';
  * 暮光遊樂館：街口開場 → 進入遊戲 → 沿中央走道走進 1F → 在麻將桌入座開打 → 離桌回到桌邊。
  */
 test('走進 1F 麻將館入座打牌，離桌後回到桌邊', async ({ page }) => {
-  await page.goto('/club?hour=20');
+  // CI 沒有 GPU，3D 場景用軟體渲染只有每秒幾格，放寬時間並用低畫質
+  test.setTimeout(150_000);
+  await page.goto('/club?hour=20&q=low');
   const root = page.getByTestId('club-root');
   await expect(root).toHaveAttribute('data-mode', 'title');
   await expect(page.getByTestId('club-clock')).toContainText('20:00 · 夜晚');
 
   await page.getByTestId('club-enter').click();
-  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 20_000 });
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 60_000 });
 
-  // 一小段一小段按 W，從騎樓直走進門，直到出現麻將桌的入座提示（低幀率時也不會走過頭）
-  const prompt = page.getByTestId('club-prompt');
-  const seatPrompt = prompt.filter({ hasText: '入座' });
-  for (let i = 0; i < 60 && (await seatPrompt.count()) === 0; i++) {
-    await page.keyboard.down('KeyW');
-    await page.waitForTimeout(120);
-    await page.keyboard.up('KeyW');
-    await page.waitForTimeout(80);
-  }
-  await expect(prompt).toContainText('入座');
+  // 「帶我去空桌」：沿尋路走到最近的麻將桌旁，出現入座提示
+  // （方向鍵走路由單元測試涵蓋；這裡不依賴軟體渲染的幀率）
+  await page.getByTestId('club-find-table').click();
+  await expect(page.getByTestId('club-prompt')).toContainText('入座', { timeout: 90_000 });
 
   await page.keyboard.press('KeyE');
   await expect(root).toHaveAttribute('data-mode', 'seated');

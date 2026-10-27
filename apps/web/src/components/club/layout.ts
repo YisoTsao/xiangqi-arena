@@ -47,14 +47,17 @@ export const TABLE_HEIGHT = 0.75;
 export const CHAIR_SIZE = 0.45;
 export const CHAIR_OFFSET = 0.8;
 
-/** 六張麻將桌：三欄兩排，中央 x = 0 留走道直通後面的樓梯與電梯 */
+/**
+ * 六張麻將桌：前後錯開，不排成倉庫式的格子；中央 x = 0 仍留一條走道直通後面的樓梯與電梯。
+ * 前排三張在玄關木隔間後面，後排三張靠窗。
+ */
 export const TABLES: readonly Vec2[] = [
-  [-5.5, -4],
-  [-2, -4],
-  [1.5, -4],
-  [-5.5, -8],
-  [-2, -8],
-  [1.5, -8],
+  [-5.6, -4.6],
+  [-2, -5.3],
+  [1.9, -4.6],
+  [-5, -8.9],
+  [-1.4, -9.6],
+  [2.4, -9],
 ];
 
 /** 每張桌子的椅子：南（你坐的位置）、東、北、西 */
@@ -79,6 +82,22 @@ export const A_LE: Vec2 = [7.8, -4.5];
 export const STAIRS = box(-8.85, -7.45, -11.85, -8.6);
 export const ELEVATOR = box(6.2, 8.85, -11.85, -10.4);
 
+/** 玄關：進門後先看到鞋櫃與展示櫃，木格隔間把玄關和牌桌區分開，中間留 4.8m 的開口 */
+export const FOYER_DEPTH = 2.2;
+export const PARTITIONS: readonly Box[] = [
+  box(HALL.minX, -2.4, -FOYER_DEPTH - 0.15, -FOYER_DEPTH),
+  box(2.4, 6, -FOYER_DEPTH - 0.15, -FOYER_DEPTH),
+];
+export const SHOE_CABINET = box(-4.2, -2.6, -0.7, -0.25);
+export const DISPLAY_CASE = box(2.6, 4.6, -0.7, -0.25);
+/** 室內大盆栽 */
+export const INDOOR_PLANTS: readonly Vec2[] = [
+  [-8.3, -0.8],
+  [5.4, -0.8],
+  [-8.3, -6.8],
+  [5.6, -11.3],
+];
+
 // ── 街口 ───────────────────────────────────────────────
 
 /** 門口兩側的花台與長椅 */
@@ -91,6 +110,17 @@ export const STREET_LAMPS: readonly Vec2[] = [
   [14, 3.6],
 ];
 export const VENDING = box(-3.4, -2.5, 0.2, 0.95);
+/** 騎樓前停的機車（台灣街景的招牌元素） */
+export const SCOOTERS: readonly Vec2[] = [
+  [-7.2, 2.6],
+  [6.6, 2.6],
+  [7.6, 2.6],
+];
+/** 電線桿 */
+export const POLES: readonly Vec2[] = [
+  [-10.5, 3.6],
+  [10.5, 3.6],
+];
 /** 紅綠兩個郵筒並排 */
 export const MAILBOX: Vec2 = [3, 2.2];
 
@@ -116,12 +146,18 @@ export const COLLIDERS: readonly Box[] = [
   box(A_LE[0] - 0.3, A_LE[0] + 0.3, A_LE[1] - 0.3, A_LE[1] + 0.3),
   STAIRS,
   ELEVATOR,
+  ...PARTITIONS,
+  SHOE_CABINET,
+  DISPLAY_CASE,
+  ...INDOOR_PLANTS.map((p) => centered(p[0], p[1], 0.6, 0.6)),
   // 街上
   ...PLANTERS,
   BENCH,
   ...STREET_LAMPS.map((p) => centered(p[0], p[1], 0.3, 0.3)),
   VENDING,
   centered(MAILBOX[0], MAILBOX[1], 0.9, 0.45),
+  ...SCOOTERS.map((p) => centered(p[0], p[1], 0.5, 1.6)),
+  ...POLES.map((p) => centered(p[0], p[1], 0.35, 0.35)),
 ];
 
 // ── 互動點 ─────────────────────────────────────────────
@@ -353,4 +389,23 @@ export function findPath(from: Vec2, to: Vec2): Vec2[] {
     i = j + 1;
   }
   return out;
+}
+
+// ── 鏡頭與方向鍵 ───────────────────────────────────────
+
+/**
+ * 3/4 斜俯視：鏡頭從右前方看過來。室外角度小一點，讓招牌正對畫面；進門後轉到斜角，
+ * 看得到牌桌的兩個側面。
+ */
+export const CAMERA_YAW = { outside: 0.12, inside: 0.55 } as const;
+
+/** 依鏡頭角度把方向鍵（右 mx、下 mz）轉成世界座標的單位向量；W 永遠是「畫面往上」 */
+export function inputToWorld(mx: number, mz: number, yaw: number): Vec2 {
+  const len = Math.hypot(mx, mz);
+  if (len === 0) return [0, 0];
+  const s = Math.sin(yaw);
+  const c = Math.cos(yaw);
+  const x = (mx * c + mz * s) / len;
+  const z = (-mx * s + mz * c) / len;
+  return [x, z];
 }

@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { DoorOpen, Footprints, LogOut } from 'lucide-react';
+import { DoorOpen, Footprints, LogOut, Navigation } from 'lucide-react';
 import { isWebGLAvailable, recommendedQuality } from '@xiangqi-arena/game-renderer';
 import { MahjongPracticeScreen } from '../mahjong/MahjongPracticeScreen';
 import { Button } from '../ui/button';
 import { DAY_PHASE_LABELS, dayPhaseOf, formatGameTime, gameHourAt } from './clock';
 import { INTERACTABLES, type Interactable } from './layout';
-import { useClub } from './store';
+import { useClub, walkToNearestTable } from './store';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -116,11 +116,15 @@ export function ClubScreen() {
   const qualitySetting = useSettings((s) => s.quality);
   const [webgl, setWebgl] = useState<boolean | null>(null);
   const [override, setOverride] = useState<number | undefined>(undefined);
+  // 網址加 ?q=high／medium／low 可以固定畫質（截圖比對用）
+  const [qualityOverride, setQualityOverride] = useState<'low' | 'medium' | 'high' | null>(null);
   const hour = useGameHour(override);
 
   useEffect(() => {
     setWebgl(isWebGLAvailable());
     setOverride(readHourOverride());
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q === 'low' || q === 'medium' || q === 'high') setQualityOverride(q);
     reset();
   }, [reset]);
 
@@ -175,7 +179,8 @@ export function ClubScreen() {
   }
 
   const quality =
-    qualitySetting === 'auto' || qualitySetting === '2d' ? recommendedQuality() : qualitySetting;
+    qualityOverride ??
+    (qualitySetting === 'auto' || qualitySetting === '2d' ? recommendedQuality() : qualitySetting);
   const table = INTERACTABLES.find((x) => x.id === seatedAt);
 
   return (
@@ -216,7 +221,18 @@ export function ClubScreen() {
                 {bubble.text}
               </div>
             )}
-            {nearby && <Prompt it={nearby} onAct={() => act(nearby)} />}
+            {nearby ? (
+              <Prompt it={nearby} onAct={() => act(nearby)} />
+            ) : (
+              <button
+                type="button"
+                onClick={walkToNearestTable}
+                data-testid="club-find-table"
+                className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#F2B552]/40 bg-[#24344D]/85 px-4 py-2 text-sm text-[#F2DAB6] shadow-xl backdrop-blur hover:bg-[#24344D]"
+              >
+                <Navigation className="size-3.5" /> 帶我去空桌
+              </button>
+            )}
             <div
               className={cn(
                 'flex items-center gap-1.5 rounded-full bg-black/35 px-3 py-1 text-[11px] text-[#F2DAB6]/80',

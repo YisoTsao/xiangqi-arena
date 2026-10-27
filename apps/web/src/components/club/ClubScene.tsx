@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment, Lightformer } from '@react-three/drei';
+import { Environment, Lightformer, Stars } from '@react-three/drei';
 import {
+  BackSide,
   Color,
   Fog,
+  ShaderMaterial,
   Vector3,
   type DirectionalLight,
   type Group,
@@ -13,21 +15,52 @@ import {
 } from 'three';
 import { Character, PLAYER_OUTFIT, animateWalk } from './Character';
 import { gameHourAt, lightingAt } from './clock';
+import { Effects } from './Effects';
 import {
+  CAMERA_YAW,
   INTERACTABLES,
   WALK_SPEED,
-  findPath,
+  inputToWorld,
   isInside,
   nearestInteractable,
   slide,
   type Vec2,
 } from './layout';
 import { MahjongHall } from './MahjongHall';
-import { NeonContext, Street } from './Street';
-import { player, useClub } from './store';
+import { NeonContext, QualityContext, useQuality, type Quality } from './props';
+import { Street } from './Street';
+import { player, useClub, walkTo } from './store';
 
-/** 目前按住的方向鍵 */
-const held = new Set<string>();
+/** 鏡頭目前的水平角度（平滑過的），方向鍵依它轉換 */
+const view = { yaw: CAMERA_YAW.outside };
+
+/**
+ * 方向鍵：記下每個鍵按下的時間，放開時把「這一格裡按住的時間」留給下一格結算。
+ * 這樣幀率很低時，按一下不到一格的時間也會走對應的距離。
+ */
+const held = new Map<string, number>();
+const tapped: { code: string; ms: number }[] = [];
+
+/** 本格的平均輸入（每軸 -1～1，長度最多 1） */
+function keyInput(now: number, frameMs: number): [number, number] {
+  let mx = 0;
+  let mz = 0;
+  const from = now - frameMs;
+  for (const [code, at] of held) {
+    const t = Math.min(1, (now - Math.max(at, from)) / frameMs);
+    mx += KEY_DIRS[code]![0] * t;
+    mz += KEY_DIRS[code]![1] * t;
+  }
+  for (const { code, ms } of tapped) {
+    const t = Math.min(1, ms / frameMs);
+    mx += KEY_DIRS[code]![0] * t;
+    mz += KEY_DIRS[code]![1] * t;
+  }
+  tapped.length = 0;
+  const len = Math.hypot(mx, mz);
+  return len > 1 ? [mx / len, mz / len] : [mx, mz];
+}
+
 const KEY_DIRS: Record<string, [number, number]> = {
   KeyW: [0, -1],
   ArrowUp: [0, -1],
@@ -39,24 +72,60 @@ const KEY_DIRS: Record<string, [number, number]> = {
   ArrowRight: [1, 0],
 };
 
-/** 點地面或點物件：走過去 */
-export function walkTo(target: Vec2): void {
-  if (useClub.getState().mode !== 'walk') return;
-  player.path = findPath(player.pos, target);
+/** 漸層天空罩：上方天色、地平線霧色；跟著日夜時鐘換色（backdrop，不參與光照） */
+function SkyDome({ top, bottom }: { top: Color; bottom: Color }) {
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        side: BackSide,
+        depthWrite: false,
+        fog: false,
+        uniforms: { uTop: { value: new Color() }, uBottom: { value: new Color() } },
+        vertexShader: `varying float vH;
+          void main() {
+            vH = normalize(position).y;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }`,
+        fragmentShader: `uniform vec3 uTop; uniform vec3 uBottom; varying float vH;
+          void main() {
+            float t = smoothstep(-0.05, 0.55, vH);
+            gl_FragColor = vec4(mix(uBottom, uTop, t), 1.0);
+            #include <colorspace_fragment>
+          }`,
+      }),
+    [],
+  );
+  useEffect(() => {
+    material.uniforms.uTop!.value.copy(top);
+    material.uniforms.uBottom!.value.copy(bottom);
+  }, [material, top, bottom]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <mesh material={material} renderOrder={-1}>
+      <sphereGeometry args={[130, 32, 16]} />
+    </mesh>
+  );
 }
 
 function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const scene = useThree((s) => s.scene);
+  const quality = useQuality();
+  const inside = useClub((s) => s.inside);
   const sun = useRef<DirectionalLight>(null);
   const hemi = useRef<HemisphereLight>(null);
   const [neon, setNeon] = useState(1);
+  const [sky, setSky] = useState(() => ({ top: new Color(), bottom: new Color() }));
 
   useEffect(() => {
     const apply = () => {
       const l = lightingAt(hour ?? gameHourAt(Date.now()));
-      const sky = new Color(...l.sky);
-      scene.background = sky;
-      scene.fog = new Fog(new Color(...l.fog), 32, 80);
+      const fog = new Color(...l.fog);
+      scene.background = fog;
+      // 室內時遠景淡一點，讓暖色牌桌區跳出來
+      scene.fog = new Fog(fog, inside ? 26 : 36, inside ? 70 : 95);
+      setSky({ top: new Color(...l.sky), bottom: fog });
+      // 進到室內：屋頂擋住天光（剖面圖拿掉了屋頂，用降低室外光代替），主光換成桌燈
+      const dim = inside ? 0.22 : 1;
       if (sun.current) {
         const c = Math.cos(l.sunElevation);
         sun.current.position.set(
@@ -65,12 +134,12 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
           c * Math.sin(l.sunAzimuth) * 30,
         );
         sun.current.color.setRGB(...l.sun);
-        sun.current.intensity = l.sunIntensity;
+        sun.current.intensity = l.sunIntensity * dim;
       }
       if (hemi.current) {
         hemi.current.color.setRGB(...l.hemiSky);
         hemi.current.groundColor.setRGB(...l.hemiGround);
-        hemi.current.intensity = l.hemiIntensity;
+        hemi.current.intensity = l.hemiIntensity * (inside ? 0.4 : 0.75);
       }
       setNeon(Math.round(l.neon * 20) / 20);
     };
@@ -78,38 +147,52 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     // CLUB_ART_BIBLE §5.2：每 5 秒更新一次就夠
     const id = setInterval(apply, 5000);
     return () => clearInterval(id);
-  }, [hour, scene]);
+  }, [hour, scene, inside]);
 
+  const shadows = quality !== 'low';
   return (
     <NeonContext.Provider value={neon}>
-      <directionalLight ref={sun} />
+      <SkyDome top={sky.top} bottom={sky.bottom} />
+      {neon > 0.4 && quality !== 'low' && (
+        <Stars radius={110} depth={10} count={900} factor={3} fade speed={0.4} />
+      )}
+      <directionalLight
+        ref={sun}
+        castShadow={shadows}
+        shadow-mapSize={quality === 'high' ? [2048, 2048] : [1024, 1024]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.03}
+        shadow-camera-left={-18}
+        shadow-camera-right={18}
+        shadow-camera-top={18}
+        shadow-camera-bottom={-18}
+        shadow-camera-far={80}
+      />
       <hemisphereLight ref={hemi} />
-      {/* 只給金屬一點反光（招牌框、鐵捲門、電梯門），不載入外部 HDR */}
-      <Environment resolution={64} frames={1} environmentIntensity={0.45}>
-        <Lightformer intensity={1.5} position={[0, 6, 8]} scale={[16, 6, 1]} />
-        <Lightformer intensity={0.8} color="#F2B552" position={[-8, 3, -2]} scale={[6, 4, 1]} />
-      </Environment>
+      {/* 只給金屬與漆面一點反光（招牌框、鐵捲門、電梯門），不載入外部 HDR */}
+      {quality !== 'low' && (
+        <Environment resolution={64} frames={1} environmentIntensity={0.35}>
+          <Lightformer intensity={1.5} position={[0, 6, 8]} scale={[16, 6, 1]} />
+          <Lightformer intensity={1} color="#F2B552" position={[-8, 3, -2]} scale={[6, 4, 1]} />
+          <Lightformer intensity={0.6} color="#9cc4ff" position={[8, 4, -6]} scale={[6, 4, 1]} />
+        </Environment>
+      )}
       {children}
     </NeonContext.Provider>
   );
 }
 
 /** 依方向鍵或點地面的路徑走 h 秒；有移動回傳 true */
-function stepPlayer(h: number): boolean {
-  let mx = 0;
-  let mz = 0;
-  for (const k of held) {
-    mx += KEY_DIRS[k]![0];
-    mz += KEY_DIRS[k]![1];
-  }
+function stepPlayer(h: number, [mx, mz]: [number, number]): boolean {
   let dx = 0;
   let dz = 0;
   const step = WALK_SPEED * h;
   if (mx || mz) {
     player.path = [];
-    const len = Math.hypot(mx, mz);
-    dx = (mx / len) * step;
-    dz = (mz / len) * step;
+    const amount = Math.min(1, Math.hypot(mx, mz));
+    const [wx, wz] = inputToWorld(mx, mz, view.yaw);
+    dx = wx * step * amount;
+    dz = wz * step * amount;
   } else if (player.path.length > 0) {
     const [tx, tz] = player.path[0]!;
     const ox = tx - player.pos[0];
@@ -139,6 +222,7 @@ function Player() {
   const ref = useRef<Group>(null);
   const visible = useClub((s) => s.mode !== 'seated');
   const walk = useRef(0);
+  const lastFrameAt = useRef(0);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -147,10 +231,20 @@ function Player() {
       if (target?.closest('input, textarea, select')) return;
       if (useClub.getState().mode !== 'walk') return;
       e.preventDefault();
-      held.add(e.code);
+      if (!held.has(e.code)) held.set(e.code, performance.now());
     };
-    const up = (e: KeyboardEvent) => held.delete(e.code);
-    const clear = () => held.clear();
+    const up = (e: KeyboardEvent) => {
+      const at = held.get(e.code);
+      if (at === undefined) return;
+      held.delete(e.code);
+      // 這一格開始後才按住的那段時間，留給下一格結算
+      const since = Math.max(at, lastFrameAt.current);
+      tapped.push({ code: e.code, ms: performance.now() - since });
+    };
+    const clear = () => {
+      held.clear();
+      tapped.length = 0;
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', clear);
@@ -158,7 +252,7 @@ function Player() {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', clear);
-      held.clear();
+      clear();
     };
   }, []);
 
@@ -169,13 +263,17 @@ function Player() {
     const club = useClub.getState();
     let moving = false;
 
+    const now = performance.now();
+    const frame = Math.min(delta, 0.3);
+    const input = keyInput(now, Math.max(1, frame * 1000));
+    lastFrameAt.current = now;
     if (club.mode === 'walk') {
       // 幀率低時分成小步走，速度不變也不會穿牆
-      let left = Math.min(delta, 0.3);
+      let left = frame;
       while (left > 1e-6) {
         const h = Math.min(left, 0.05);
         left -= h;
-        if (stepPlayer(h)) moving = true;
+        if (stepPlayer(h, input)) moving = true;
       }
       club.setNearby(nearestInteractable(player.pos));
       club.setInside(isInside(player.pos));
@@ -198,10 +296,19 @@ function Player() {
   );
 }
 
-/** 開場鏡頭：街口斜角看整棟樓與直立招牌 */
-const TITLE_POS = new Vector3(-6.5, 1.9, 12.6);
-const TITLE_LOOK = new Vector3(2, 6.4, 0);
+/** 開場鏡頭：從對面人行道仰看整棟樓、燈箱與直立招牌 */
+const TITLE_POS = new Vector3(-5, 2.1, 15.5);
+const TITLE_LOOK = new Vector3(0.8, 5.4, 0);
 const INTRO_SECONDS = 2;
+
+/**
+ * 3/4 斜俯視跟隨鏡頭（約 45°）。室外拉遠、角度小，讓招牌入鏡；室內轉到斜角、略高，
+ * 看進剖面娃娃屋。直向手機再拉遠一點。
+ */
+const FOLLOW = {
+  outside: { dist: 7.4, height: 5.2, lookAhead: 1.8 },
+  inside: { dist: 6.4, height: 6.6, lookAhead: 0.9 },
+} as const;
 
 function CameraRig() {
   const camera = useThree((s) => s.camera);
@@ -214,19 +321,23 @@ function CameraRig() {
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
     const { mode, inside } = useClub.getState();
-    // 直向手機拉遠一點，左右才看得到桌子
-    const far = size.width / Math.max(1, size.height) < 1 ? 1.45 : 1;
+    const target = inside ? CAMERA_YAW.inside : CAMERA_YAW.outside;
+    view.yaw += (target - view.yaw) * (mode === 'walk' ? 1 - Math.exp(-dt * 3) : 1);
+    const f = inside ? FOLLOW.inside : FOLLOW.outside;
+    const far = size.width / Math.max(1, size.height) < 1 ? 1.4 : 1;
     const [px, pz] = player.pos;
+    const sy = Math.sin(view.yaw);
+    const cy = Math.cos(view.yaw);
     const followPos = tmpPos.current.set(
-      px,
-      (inside ? 7.4 : 5.6) * far,
-      pz + (inside ? 6.2 : 7.6) * far,
+      px + sy * f.dist * far,
+      f.height * far,
+      pz + cy * f.dist * far,
     );
-    const followLook = tmpLook.current.set(px, 0.9, pz - (inside ? 0.8 : 1.6));
+    const followLook = tmpLook.current.set(px - sy * f.lookAhead, 0.9, pz - cy * f.lookAhead);
 
     if (mode === 'title') {
       intro.current = null;
-      const sway = Math.sin(state.clock.elapsedTime * 0.15) * 0.8;
+      const sway = Math.sin(state.clock.elapsedTime * 0.15) * 0.6;
       camera.position.set(TITLE_POS.x + sway, TITLE_POS.y, TITLE_POS.z);
       look.current.copy(TITLE_LOOK);
     } else if (mode === 'intro') {
@@ -244,7 +355,7 @@ function CameraRig() {
         useClub.getState().setMode('walk');
       }
     } else {
-      const k = 1 - Math.exp(-dt * 6);
+      const k = 1 - Math.exp(-dt * 5);
       camera.position.lerp(followPos, k);
       look.current.lerp(followLook, k);
     }
@@ -272,14 +383,15 @@ function ClickGround() {
 
 function World({ hour }: { hour?: number }) {
   const inside = useClub((s) => s.inside);
+  const dbg = typeof window !== 'undefined' ? window.location.search : '';
   const select = (id: string) => {
     const it = INTERACTABLES.find((x) => x.id === id);
     if (it) walkTo(it.approach);
   };
   return (
     <DayNight hour={hour}>
-      <Street inside={inside} />
-      <MahjongHall onSelect={select} />
+      {!dbg.includes('nostreet') && <Street inside={inside} />}
+      {!dbg.includes('nohall') && <MahjongHall onSelect={select} inside={inside} />}
       <ClickGround />
       <Player />
       <CameraRig />
@@ -287,26 +399,70 @@ function World({ hour }: { hour?: number }) {
   );
 }
 
+/** 網址加 ?perf=1 時，把 draw call、三角面與 FPS 掛到 window.__clubPerf（效能量測用） */
+function PerfProbe() {
+  const gl = useThree((s) => s.gl);
+  const frames = useRef({ n: 0, t0: 0 });
+  const enabled = typeof window !== 'undefined' && window.location.search.includes('perf=1');
+  useEffect(() => {
+    if (!enabled) return;
+    gl.info.autoReset = false;
+    return () => {
+      gl.info.autoReset = true;
+    };
+  }, [enabled, gl]);
+  // 在所有 useFrame 之前讀上一格的統計，再歸零
+  useFrame(() => {
+    if (!enabled) return;
+    const f = frames.current;
+    const now = performance.now();
+    if (!f.t0) f.t0 = now;
+    f.n++;
+    // FPS 每 3 秒重算一次，避開一開始編譯 shader 的停頓
+    const w = window as unknown as { __clubPerf?: { fps: number } };
+    const fps = now - f.t0 > 3000 ? (f.n * 1000) / (now - f.t0) : (w.__clubPerf?.fps ?? 0);
+    if (now - f.t0 > 3000) {
+      f.t0 = now;
+      f.n = 0;
+    }
+    w.__clubPerf = {
+      calls: gl.info.render.calls,
+      triangles: gl.info.render.triangles,
+      geometries: gl.info.memory.geometries,
+      textures: gl.info.memory.textures,
+      programs: gl.info.programs?.length ?? 0,
+      fps,
+    } as { fps: number };
+    gl.info.reset();
+  }, -1000);
+  return null;
+}
+
 const DPR = { low: [1, 1], medium: [1, 1.5], high: [1, 2] } as const;
 
-export function ClubScene({
-  hour,
-  quality,
-}: {
-  hour?: number;
-  quality: 'low' | 'medium' | 'high';
-}) {
+export function ClubScene({ hour, quality }: { hour?: number; quality: Quality }) {
   const seated = useClub((s) => s.mode === 'seated');
   return (
     <Canvas
       dpr={[...DPR[quality]]}
       frameloop={seated ? 'never' : 'always'}
-      gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}
-      camera={{ fov: 42, near: 0.1, far: 140, position: TITLE_POS.toArray() }}
+      shadows={quality !== 'low'}
+      flat={quality !== 'low'}
+      // 高中畫質由後處理做抗鋸齒與色調映射；低畫質直接用 renderer 的 ACES
+      gl={{
+        antialias: quality === 'low',
+        powerPreference: 'high-performance',
+        stencil: false,
+      }}
+      camera={{ fov: 40, near: 0.1, far: 300, position: TITLE_POS.toArray() }}
       style={{ touchAction: 'none' }}
       aria-label="暮光遊樂館街口"
     >
-      <World hour={hour} />
+      <QualityContext.Provider value={quality}>
+        <World hour={hour} />
+        <Effects />
+        <PerfProbe />
+      </QualityContext.Provider>
     </Canvas>
   );
 }
