@@ -20,16 +20,18 @@ apps/game-server/src/
 
 ## 2. 訊息協定
 
-全部定義於 `packages/game-protocol`，型別與 zod schema 同源。
+全部定義於 `packages/game-protocol`，型別與 zod schema 同源。協定 v2 不認得任何一款遊戲：
+動作內容由遊戲的 `parseAction` 驗證，快照中的遊戲欄位由前端的遊戲模組驗證。
 
 ### 加入房間（`onAuth` 驗證）
 
 ```ts
 {
-  protocol: 1,
+  protocol: 2,
   playerToken: string,   // 16–64 字元，URL-safe；只有該瀏覽器知道
   name: string,          // 1–16 字元，不含控制字元與角括號
-  mode?: 'xiangqi' | 'banqi',
+  gameId?: string,       // 建立房間時指定，之後不能更換；預設 'xiangqi'
+  mode?: string,         // 必須是該遊戲的模式，例如 'classic' | 'banqi'
   timeControl?: TimeControlId,
 }
 ```
@@ -41,7 +43,7 @@ apps/game-server/src/
 | `setReady`    | `ready`                                 | 大廳準備狀態                 |
 | `configure`   | `mode`, `timeControl`                   | 僅房主                       |
 | `start`       | —                                       | 僅房主，且雙方皆已準備       |
-| `action`      | `actionId`, `expectedVersion`, `action` | 走棋或翻棋                   |
+| `action`      | `actionId`, `expectedVersion`, `action` | 遊戲動作，內容由遊戲驗證     |
 | `resign`      | `actionId`                              | 認輸                         |
 | `offerDraw`   | `actionId`                              | 提議和棋                     |
 | `respondDraw` | `actionId`, `accept`                    | 回應和棋                     |

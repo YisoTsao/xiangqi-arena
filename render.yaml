@@ -15,6 +15,7 @@ services:
       paths:
         - apps/game-server/**
         - packages/**
+        - games/**
         - pnpm-lock.yaml
         - render.yaml
     envVars:

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRandom } from '@xiangqi-arena/shared';
 import { parseSquare } from '@xiangqi-arena/game-xiangqi';
-import { GameViewSchema } from '@xiangqi-arena/game-protocol';
+import { XiangqiViewSchema, xiangqiGame } from '@xiangqi-arena/games-xiangqi';
 import { Match } from './match';
 
 const S = (n: string): number => parseSquare(n)!;
@@ -9,14 +9,20 @@ let idCounter = 0;
 const aid = (): string => `action-${++idCounter}-xxxx`;
 
 function xiangqi(now = 0, timeControl: { initialMs: number; incrementMs: number } | null = null) {
-  return new Match({ mode: 'xiangqi', timeControl, random: seededRandom(1), firstSeat: 0, now });
+  return new Match(xiangqiGame, {
+    mode: 'classic',
+    timeControl,
+    random: seededRandom(1),
+    firstSeat: 0,
+    now,
+  });
 }
 
 describe('Match (xiangqi)', () => {
   it('seat 0 plays red and moves first; version increments', () => {
     const m = xiangqi();
     expect(m.turnSeat).toBe(0);
-    expect(m.seatSide(0)).toBe('red');
+    expect(m.seatLabel(0)).toBe('red');
     const r = m.submitAction(
       0,
       { actionId: aid(), expectedVersion: 0, action: { kind: 'move', from: S('h2'), to: S('e2') } },
@@ -159,19 +165,25 @@ describe('Match (xiangqi)', () => {
     expect(m.view(0).legalActions).toHaveLength(44);
     expect(m.view(1).legalActions).toHaveLength(0);
     expect(m.view(null).legalActions).toHaveLength(0);
-    expect(GameViewSchema.safeParse(m.view(0)).success).toBe(true);
+    expect(XiangqiViewSchema.safeParse(m.view(0)).success).toBe(true);
   });
 });
 
 describe('Match (banqi) hidden information', () => {
   const banqi = () =>
-    new Match({ mode: 'banqi', timeControl: null, random: seededRandom(77), firstSeat: 0, now: 0 });
+    new Match(xiangqiGame, {
+      mode: 'banqi',
+      timeControl: null,
+      random: seededRandom(77),
+      firstSeat: 0,
+      now: 0,
+    });
 
   it('never sends identities of face-down pieces', () => {
     const m = banqi();
     for (const viewer of [0, 1, null] as const) {
       const v = m.view(viewer);
-      expect(GameViewSchema.safeParse(v).success).toBe(true);
+      expect(XiangqiViewSchema.safeParse(v).success).toBe(true);
       for (const c of v.board) expect(c && Object.keys(c).sort()).toEqual(['faceUp', 'id']);
       const json = JSON.stringify(v);
       expect(json).not.toMatch(/"kind":"(king|advisor|elephant|chariot|horse|cannon|pawn)"/);

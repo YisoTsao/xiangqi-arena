@@ -3,11 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Play } from 'lucide-react';
-import {
-  TIME_CONTROL_LABELS,
-  type GameMode,
-  type TimeControlId,
-} from '@xiangqi-arena/game-protocol';
+import { TIME_CONTROL_LABELS, type TimeControlId } from '@xiangqi-arena/game-protocol';
+import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import { GameScreen } from './game/GameScreen';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -15,10 +12,10 @@ import { Segmented } from './ui/segmented';
 import { Logo } from './Logo';
 import { useLocalGame } from '@/lib/local/localGame';
 
-export function LocalScreen({ initialMode }: { initialMode: GameMode }) {
+export function LocalScreen({ initialMode }: { initialMode: XiangqiMode }) {
   const router = useRouter();
   const { snapshot, snapshotAt, start, send, stop } = useLocalGame();
-  const [mode, setMode] = useState<GameMode>(initialMode);
+  const [mode, setMode] = useState<XiangqiMode>(initialMode);
   const [tc, setTc] = useState<TimeControlId>('unlimited');
   useEffect(() => () => stop(), [stop]);
 
@@ -53,11 +50,11 @@ export function LocalScreen({ initialMode }: { initialMode: GameMode }) {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Segmented<GameMode>
+          <Segmented<XiangqiMode>
             ariaLabel="遊戲模式"
             value={mode}
             options={[
-              { value: 'xiangqi', label: '大盤象棋' },
+              { value: 'classic', label: '大盤象棋' },
               { value: 'banqi', label: '暗棋' },
             ]}
             onChange={setMode}

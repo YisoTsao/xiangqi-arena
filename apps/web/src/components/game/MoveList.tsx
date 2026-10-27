@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { MoveListEntry } from '@xiangqi-arena/game-protocol';
+import type { MoveListEntry } from '@xiangqi-arena/games-xiangqi';
 import { cn } from '@/lib/utils';
 
 export function MoveList({ moves, className }: { moves: MoveListEntry[]; className?: string }) {

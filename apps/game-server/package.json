@@ -21,6 +21,7 @@
     "@xiangqi-arena/game-core": "workspace:*",
     "@xiangqi-arena/game-match": "workspace:*",
     "@xiangqi-arena/game-protocol": "workspace:*",
+    "@xiangqi-arena/games": "workspace:*",
     "@xiangqi-arena/shared": "workspace:*",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",

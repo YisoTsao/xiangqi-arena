@@ -1,5 +1,6 @@
-import { otherSeat, type Seat } from '@xiangqi-arena/game-core';
-import { Match } from '@xiangqi-arena/game-match';
+import type { AnyGameDefinition, SeatIndex } from '@xiangqi-arena/game-core';
+import { Match, type AnyMatch } from '@xiangqi-arena/game-match';
+import { DEFAULT_GAME_ID, getGame, hasMode } from '@xiangqi-arena/games';
 import {
   ClientIntentSchema,
   DEFAULT_TIME_CONTROL,
@@ -8,7 +9,6 @@ import {
   type Ack,
   type ClientIntent,
   type ErrorCode,
-  type GameMode,
   type JoinOptions,
   type Notice,
   type RoomSnapshot,
@@ -41,12 +41,14 @@ export interface FinishedMatchInfo {
   roomCode: string;
   matchNumber: number;
   timeControl: TimeControlId;
-  players: [{ token: string; name: string }, { token: string; name: string }];
-  match: Match;
+  players: { token: string; name: string }[];
+  match: AnyMatch;
 }
 
 export interface RoomControllerDeps {
   roomCode: string;
+  /** 房間綁定的遊戲；建立後不可更換。省略則用預設遊戲 */
+  gameId?: string;
   now: () => number;
   random: RandomInt;
   send: (clientId: string, channel: string, payload: unknown) => void;
@@ -55,42 +57,63 @@ export interface RoomControllerDeps {
 }
 
 export type JoinResult =
-  { ok: true; seat: Seat; replacedClientId: string | null } | { ok: false; error: 'ROOM_FULL' };
+  | { ok: true; seat: SeatIndex; replacedClientId: string | null }
+  | { ok: false; error: 'ROOM_FULL' };
+
+export class UnknownGameError extends Error {
+  constructor(readonly gameId: string) {
+    super(`unknown game ${gameId}`);
+  }
+}
 
 /**
  * 房間的權威邏輯：座位、準備、模式設定、開始、對局、再來一局、斷線處理。
  * 不依賴 Colyseus，便於單元測試；ArenaRoom 只負責轉接網路事件。
+ * 遊戲規則全部來自註冊表中的 GameDefinition，房間本身不認得任何遊戲。
  */
 export class RoomController {
   readonly roomCode: string;
-  private seats: [SeatRecord | null, SeatRecord | null] = [null, null];
-  private hostSeat: Seat = 0;
+  readonly game: AnyGameDefinition;
+  /** 座位數 = 遊戲的 players.max；目前要坐滿才能開始 */
+  private seats: (SeatRecord | null)[];
+  private hostSeat: SeatIndex = 0;
   private phase: RoomSnapshot['phase'] = 'lobby';
-  private mode: GameMode = 'xiangqi';
+  private mode: string;
   private timeControl: TimeControlId = DEFAULT_TIME_CONTROL;
-  private match: Match | null = null;
+  private match: AnyMatch | null = null;
   private matchNumber = 0;
-  private nextFirstSeat: Seat | null = null;
-  private rematchVotes: [boolean, boolean] = [false, false];
+  private nextFirstSeat: SeatIndex | null = null;
+  private rematchVotes: boolean[];
   private roomVersion = 0;
-  private reportedMatch: Match | null = null;
+  private reportedMatch: AnyMatch | null = null;
   private limiters = new Map<string, TokenBucket>();
   private readonly timings: RoomTimings;
 
   constructor(private readonly deps: RoomControllerDeps) {
     this.roomCode = deps.roomCode;
     this.timings = { ...DEFAULT_TIMINGS, ...deps.timings };
+    const gameId = deps.gameId ?? DEFAULT_GAME_ID;
+    const game = getGame(gameId);
+    if (!game) throw new UnknownGameError(gameId);
+    this.game = game;
+    this.mode = game.defaultMode;
+    this.seats = Array.from({ length: game.players.max }, () => null);
+    this.rematchVotes = this.seats.map(() => false);
   }
 
-  configureInitial(mode?: GameMode, timeControl?: TimeControlId): void {
-    if (mode) this.mode = mode;
+  /** 建立房間時的初始設定；不合法的值直接忽略 */
+  configureInitial(mode?: string, timeControl?: TimeControlId): void {
+    if (mode && hasMode(this.game, mode)) this.mode = mode;
     if (timeControl) this.timeControl = timeControl;
   }
 
-  seatOfClient(clientId: string): Seat | null {
-    if (this.seats[0]?.clientId === clientId) return 0;
-    if (this.seats[1]?.clientId === clientId) return 1;
-    return null;
+  get seatCount(): number {
+    return this.seats.length;
+  }
+
+  seatOfClient(clientId: string): SeatIndex | null {
+    const i = this.seats.findIndex((s) => s?.clientId === clientId);
+    return i < 0 ? null : i;
   }
 
   /** onAuth 階段的預先檢查（不改變狀態） */
@@ -103,7 +126,7 @@ export class RoomController {
     const now = this.deps.now();
     const existing = this.seats.findIndex((s) => s?.token === options.playerToken);
     if (existing >= 0) {
-      const seat = existing as Seat;
+      const seat = existing;
       const record = this.seats[seat]!;
       const replaced = record.clientId;
       record.clientId = clientId;
@@ -127,7 +150,7 @@ export class RoomController {
     if (this.phase !== 'lobby') return { ok: false, error: 'ROOM_FULL' };
     const free = this.seats.findIndex((s) => s === null);
     if (free < 0) return { ok: false, error: 'ROOM_FULL' };
-    const seat = free as Seat;
+    const seat = free;
     this.seats[seat] = {
       token: options.playerToken,
       name: options.name,
@@ -135,7 +158,7 @@ export class RoomController {
       ready: false,
       disconnectedAt: null,
     };
-    if (!this.seats[otherSeat(seat)]) this.hostSeat = seat;
+    if (this.seats.every((s, i) => i === seat || s === null)) this.hostSeat = seat;
     void now;
     this.bump();
     this.notifyOthers(seat, { kind: 'playerJoined', seat });
@@ -183,14 +206,14 @@ export class RoomController {
     this.broadcast();
   }
 
-  private releaseSeat(seat: Seat): void {
+  private releaseSeat(seat: SeatIndex): void {
     this.seats[seat] = null;
-    const other = otherSeat(seat);
-    if (this.seats[other]) {
-      this.hostSeat = other;
-      this.seats[other]!.ready = false;
+    if (seat === this.hostSeat) {
+      const next = this.seats.findIndex((s) => s !== null);
+      if (next >= 0) this.hostSeat = next;
     }
-    this.rematchVotes = [false, false];
+    for (const s of this.seats) if (s) s.ready = false;
+    this.clearRematchVotes();
     if (this.phase === 'ended') {
       this.phase = 'lobby';
       this.match = null;
@@ -206,7 +229,7 @@ export class RoomController {
     return this.phase;
   }
 
-  get currentMatch(): Match | null {
+  get currentMatch(): AnyMatch | null {
     return this.match;
   }
 
@@ -239,7 +262,7 @@ export class RoomController {
     }
   }
 
-  private dispatch(seat: Seat, clientId: string, intent: ClientIntent): ErrorCode | null {
+  private dispatch(seat: SeatIndex, clientId: string, intent: ClientIntent): ErrorCode | null {
     const now = this.deps.now();
     switch (intent.type) {
       case 'sync':
@@ -253,22 +276,21 @@ export class RoomController {
       case 'configure': {
         if (seat !== this.hostSeat) return 'NOT_HOST';
         if (this.phase === 'playing') return 'NOT_IN_LOBBY';
+        if (!hasMode(this.game, intent.mode)) return 'INVALID_CONFIG';
         this.mode = intent.mode;
         this.timeControl = intent.timeControl;
         if (this.phase === 'ended') {
           this.phase = 'lobby';
           this.match = null;
         }
-        this.rematchVotes = [false, false];
+        this.clearRematchVotes();
         for (const s of this.seats) if (s) s.ready = false;
         return null;
       }
       case 'start': {
         if (seat !== this.hostSeat) return 'NOT_HOST';
         if (this.phase !== 'lobby') return 'NOT_IN_LOBBY';
-        if (!this.seats[0] || !this.seats[1] || !this.seats[0].ready || !this.seats[1].ready) {
-          return 'PLAYERS_NOT_READY';
-        }
+        if (!this.seats.every((s) => s?.ready)) return 'PLAYERS_NOT_READY';
         this.startMatch(now);
         return null;
       }
@@ -302,9 +324,9 @@ export class RoomController {
       }
       case 'rematch': {
         if (this.phase !== 'ended') return 'GAME_NOT_ACTIVE';
-        if (!this.seats[0] || !this.seats[1]) return 'PLAYERS_NOT_READY';
+        if (!this.seats.every((s) => s !== null)) return 'PLAYERS_NOT_READY';
         this.rematchVotes[seat] = true;
-        if (this.rematchVotes[0] && this.rematchVotes[1]) {
+        if (this.rematchVotes.every(Boolean)) {
           this.startMatch(now);
         } else {
           this.notifyOthers(seat, { kind: 'rematchRequested', seat });
@@ -314,13 +336,19 @@ export class RoomController {
     }
   }
 
+  private clearRematchVotes(): void {
+    this.rematchVotes = this.seats.map(() => false);
+  }
+
   private startMatch(now: number): void {
-    const firstSeat = this.nextFirstSeat ?? (this.deps.random(2) as Seat);
-    // 再來一局時交換先後手 / 紅黑
-    this.nextFirstSeat = otherSeat(firstSeat);
+    const seats = this.seats.length;
+    const firstSeat = this.nextFirstSeat ?? this.deps.random(seats);
+    // 再來一局時輪替先手（兩人遊戲即交換先後手 / 紅黑）
+    this.nextFirstSeat = (firstSeat + 1) % seats;
     const tc = TIME_CONTROLS[this.timeControl];
-    this.match = new Match({
+    this.match = new Match(this.game, {
       mode: this.mode,
+      seats,
       timeControl: tc ? { initialMs: tc.initialMs, incrementMs: tc.incrementMs } : null,
       random: this.deps.random,
       firstSeat,
@@ -328,7 +356,7 @@ export class RoomController {
     });
     this.matchNumber++;
     this.phase = 'playing';
-    this.rematchVotes = [false, false];
+    this.clearRematchVotes();
   }
 
   private afterMatchChange(): void {
@@ -342,16 +370,13 @@ export class RoomController {
     const match = this.match;
     if (!match || this.reportedMatch === match) return;
     this.reportedMatch = match;
-    const [a, b] = this.seats;
-    if (!a || !b || !this.deps.onMatchFinished) return;
+    const seated = this.seats.filter((s): s is SeatRecord => s !== null);
+    if (seated.length !== this.seats.length || !this.deps.onMatchFinished) return;
     this.deps.onMatchFinished({
       roomCode: this.roomCode,
       matchNumber: this.matchNumber,
       timeControl: this.timeControl,
-      players: [
-        { token: a.token, name: a.name },
-        { token: b.token, name: b.name },
-      ],
+      players: seated.map((s) => ({ token: s.token, name: s.name })),
       match,
     });
   }
@@ -362,8 +387,7 @@ export class RoomController {
     let changed = false;
     if (this.match && this.phase === 'playing') {
       if (this.match.tick(now)) changed = true;
-      for (const seat of [0, 1] as const) {
-        const s = this.seats[seat];
+      for (const [seat, s] of this.seats.entries()) {
         if (s?.disconnectedAt != null && now - s.disconnectedAt >= this.timings.abandonMs) {
           this.match.forfeit(seat, 'abandon', now);
           changed = true;
@@ -371,8 +395,7 @@ export class RoomController {
       }
       this.afterMatchChange();
     } else {
-      for (const seat of [0, 1] as const) {
-        const s = this.seats[seat];
+      for (const [seat, s] of this.seats.entries()) {
         if (
           s &&
           s.clientId === null &&
@@ -391,7 +414,7 @@ export class RoomController {
     return changed;
   }
 
-  snapshotFor(viewer: Seat | null): RoomSnapshot {
+  snapshotFor(viewer: SeatIndex | null): RoomSnapshot {
     const now = this.deps.now();
     const seatView = (s: SeatRecord | null) =>
       s
@@ -411,14 +434,14 @@ export class RoomController {
       phase: this.phase,
       hostSeat: this.hostSeat,
       yourSeat: viewer,
-      seats: [seatView(this.seats[0]), seatView(this.seats[1])],
-      config: { mode: this.mode, timeControl: this.timeControl },
+      seats: this.seats.map(seatView),
+      config: { gameId: this.game.id, mode: this.mode, timeControl: this.timeControl },
       matchNumber: this.matchNumber,
       clock: this.match ? this.match.clockView(now) : null,
       drawOfferSeat: this.match?.drawOffer ?? null,
       rematchVotes: [...this.rematchVotes],
       game: this.match ? this.match.view(viewer) : null,
-      abandonDeadlineMs: [deadline(this.seats[0]), deadline(this.seats[1])],
+      abandonDeadlineMs: this.seats.map(deadline),
     };
   }
 
@@ -427,20 +450,20 @@ export class RoomController {
     return this.match?.msUntilFlag(this.deps.now()) ?? null;
   }
 
-  sendSnapshot(clientId: string, seat: Seat | null): void {
+  sendSnapshot(clientId: string, seat: SeatIndex | null): void {
     this.deps.send(clientId, MSG.snapshot, this.snapshotFor(seat));
   }
 
   broadcast(): void {
-    for (const seat of [0, 1] as const) {
-      const s = this.seats[seat];
+    for (const [seat, s] of this.seats.entries()) {
       if (s?.clientId && s.disconnectedAt === null) this.sendSnapshot(s.clientId, seat);
     }
   }
 
-  private notifyOthers(seat: Seat, notice: Notice): void {
-    const other = this.seats[otherSeat(seat)];
-    if (other?.clientId) this.deps.send(other.clientId, MSG.notice, notice);
+  private notifyOthers(seat: SeatIndex, notice: Notice): void {
+    for (const [i, other] of this.seats.entries()) {
+      if (i !== seat && other?.clientId) this.deps.send(other.clientId, MSG.notice, notice);
+    }
   }
 
   private ack(clientId: string, actionId: string | null, intent: string, error?: ErrorCode): void {

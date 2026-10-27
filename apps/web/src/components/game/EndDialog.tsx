@@ -1,21 +1,18 @@
 'use client';
 
-import {
-  DRAW_REASON_LABELS,
-  WIN_REASON_LABELS,
-  type OutcomeView,
-} from '@xiangqi-arena/game-protocol';
+import type { OutcomeView } from '@xiangqi-arena/game-protocol';
 import type { Seat } from '@xiangqi-arena/game-core';
 import { Crown, Handshake, RotateCcw, LogOut, Eye } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '@/lib/utils';
+import { reasonLabel } from '@/lib/xiangqi';
 
 interface Props {
   outcome: OutcomeView;
   /** null = 旁觀或本機模式（以座位名稱顯示勝方） */
   yourSeat: Seat | null;
   winnerName: string | null;
-  rematchVotes: [boolean, boolean];
+  rematchVotes: boolean[];
   canRematch: boolean;
   onRematch: () => void;
   onViewBoard: () => void;
@@ -43,9 +40,9 @@ export function EndDialog({
       : won
         ? '勝利！'
         : '落敗';
-  const reason = draw ? DRAW_REASON_LABELS[outcome.reason] : WIN_REASON_LABELS[outcome.reason];
-  const myVote = yourSeat !== null && rematchVotes[yourSeat];
-  const theirVote = yourSeat !== null && rematchVotes[yourSeat === 0 ? 1 : 0];
+  const reason = reasonLabel(outcome.reason);
+  const myVote = yourSeat !== null && !!rematchVotes[yourSeat];
+  const theirVote = yourSeat !== null && !!rematchVotes[yourSeat === 0 ? 1 : 0];
 
   return (
     <div

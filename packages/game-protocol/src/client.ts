@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GameModeSchema, PROTOCOL_VERSION, SquareSchema, TimeControlIdSchema } from './common';
+import { GameIdSchema, ModeIdSchema, PROTOCOL_VERSION, TimeControlIdSchema } from './common';
 
 /** 加入 / 建立房間時的選項（onAuth 驗證） */
 export const JoinOptionsSchema = z
@@ -13,7 +13,9 @@ export const JoinOptionsSchema = z
       .min(1)
       .max(16)
       .regex(/^[^<>\u0000-\u001f]+$/),
-    mode: GameModeSchema.optional(),
+    /** 建立房間時指定；房間建立後遊戲不能更換 */
+    gameId: GameIdSchema.optional(),
+    mode: ModeIdSchema.optional(),
     timeControl: TimeControlIdSchema.optional(),
   })
   .strict();
@@ -21,19 +23,13 @@ export type JoinOptions = z.infer<typeof JoinOptionsSchema>;
 
 export const ActionIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);
 
-export const GameActionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('move'), from: SquareSchema, to: SquareSchema }).strict(),
-  z.object({ kind: z.literal('flip'), square: SquareSchema }).strict(),
-]);
-export type GameAction = z.infer<typeof GameActionSchema>;
-
 /** 客戶端只送「意圖」，伺服器驗證後才更新狀態 */
 export const ClientIntentSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setReady'), ready: z.boolean() }).strict(),
   z
     .object({
       type: z.literal('configure'),
-      mode: GameModeSchema,
+      mode: ModeIdSchema,
       timeControl: TimeControlIdSchema,
     })
     .strict(),
@@ -43,7 +39,8 @@ export const ClientIntentSchema = z.discriminatedUnion('type', [
       type: z.literal('action'),
       actionId: ActionIdSchema,
       expectedVersion: z.number().int().min(0),
-      action: GameActionSchema,
+      /** 內容由遊戲的 parseAction 驗證 */
+      action: z.unknown(),
     })
     .strict(),
   z.object({ type: z.literal('resign'), actionId: ActionIdSchema }).strict(),

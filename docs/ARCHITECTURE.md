@@ -31,12 +31,15 @@ xiangqi-arena/
 │   └── game-server/      Colyseus 遊戲伺服器
 ├── packages/
 │   ├── shared/           Result、亂數、洗牌、房間代碼
-│   ├── game-core/        陣營、座位、棋子、勝負原因、棋鐘
+│   ├── game-core/        平台契約 GameDefinition、座位、勝負、棋鐘（N 座位）
 │   ├── game-xiangqi/     象棋規則引擎（FEN、走法、將軍、長將長捉、中文記譜）
 │   ├── game-banqi/       暗棋規則引擎（可配置 RuleSet）
-│   ├── game-protocol/    連線訊息的 TypeScript 型別 + zod 執行時驗證
-│   ├── game-match/       對局狀態機（回合、版本、計時、和棋、視角過濾）
+│   ├── game-protocol/    遊戲無關的連線協定（v2）+ zod 執行時驗證
+│   ├── game-match/       泛型對局狀態機（回合、版本、計時、和棋、認輸）
 │   └── game-renderer/    棋盤呈現：2.5D（R3F）與 2D（SVG）
+├── games/
+│   ├── xiangqi/          象棋遊戲定義：classic（大盤）與 banqi（暗棋）兩種模式
+│   └── registry/         遊戲註冊表（伺服器與前端共用）
 ├── supabase/migrations/  資料結構
 └── docs/                 本資料夾
 ```
@@ -44,11 +47,15 @@ xiangqi-arena/
 相依方向（單向，無循環）：
 
 ```
-shared ← game-core ← game-xiangqi ─┐
-                  ← game-banqi ────┼→ game-match → apps/*
+shared ← game-core ← game-protocol ← game-match ─────────────→ apps/*
+         game-core ← game-xiangqi ─┐
+         game-core ← game-banqi ───┼→ games/xiangqi → games/registry → apps/*
                      game-protocol ┘
 game-core → game-renderer → apps/web
 ```
+
+平台層（`game-core`、`game-protocol`、`game-match`、`RoomController`）**不依賴任何一款遊戲**；
+遊戲只透過 `GameDefinition` 接上平台（見 §4）。
 
 工具：pnpm workspace。套件以 TypeScript 原始碼發佈（`main` 指向 `src/index.ts`），
 由 Next.js 的 `transpilePackages` 與伺服器端的 tsup 轉譯，省去 build step。
@@ -67,21 +74,35 @@ applyBanqiAction(state, seat, action): Result<BanqiState, BanqiActionError>
 - 棋子有穩定 `id`，供渲染層做動畫追蹤；`id` **不參與**局面比較。
 - 走法產生器以 perft 驗證：開局 perft(1)=44、perft(2)=1920、perft(3)=79666。
 
-## 4. 對局狀態機（`packages/game-match`）
+## 4. 平台與遊戲（`GameDefinition` 與 `packages/game-match`）
 
-`Match` 類別包住規則引擎，額外負責：
+每款遊戲提供一個 `GameDefinition`（`packages/game-core/src/definition.ts`）：
 
-| 職責        | 實作                                                     |
-| ----------- | -------------------------------------------------------- |
-| 座位 ↔ 陣營 | 象棋以 `redSeat` 對應；暗棋由翻棋決定                    |
-| 棋局版本    | 每次成功操作 `version++`，客戶端須附 `expectedVersion`   |
-| 重複封包    | 保留最近 512 個 `actionId`，重送回 `DUPLICATE`           |
-| 計時        | Fischer 加秒；`tick(now)` 判超時；`msUntilFlag()` 供排程 |
-| 和棋        | 提議／接受／拒絕；對手走棋視同拒絕；每步限提議一次       |
-| 視角過濾    | `view(seat)` 只輸出該座位可知的資訊                      |
+| 成員                            | 說明                                                    |
+| ------------------------------- | ------------------------------------------------------- |
+| `id`、`players`、`modes`        | 註冊表 id、座位數範圍、模式（象棋：`classic`、`banqi`） |
+| `features`                      | 是否支援和棋提議（限兩人）、計時、認輸                  |
+| `parseAction(raw)`              | 用遊戲自己的 zod schema 驗證客戶端動作                  |
+| `setup` / `apply`               | 開局；套用動作並回傳新狀態與棋譜文字，或錯誤碼          |
+| `activeSeats` / `outcome`       | 現在誰能行動（可多人）；規則判定的結果                  |
+| `view(state, viewer)`           | 依座位過濾隱藏資訊後的畫面資料                          |
+| `end` / `seatLabel` / `forfeit` | 選配：寫入平台判定的結果、座位陣營、多人遊戲的認輸處理  |
+
+新增遊戲 = 在 `games/<id>/` 寫一個定義，並加進 `games/registry`。
+
+`Match` 類別包住遊戲定義，負責平台共通的部分：
+
+| 職責     | 實作                                                      |
+| -------- | --------------------------------------------------------- |
+| 回合     | `activeSeats` 只有一個座位時才計時；不是行動座位一律拒絕  |
+| 棋局版本 | 每次成功操作 `version++`，客戶端須附 `expectedVersion`    |
+| 重複封包 | 保留最近 512 個 `actionId`，重送回 `DUPLICATE`            |
+| 計時     | Fischer 加秒；`tick(now)` 判超時；`msUntilFlag()` 供排程  |
+| 和棋     | 提議／接受／拒絕；對手走棋視同拒絕；每步限提議一次        |
+| 視角過濾 | 遊戲的 `view(state, seat)` + 平台欄位（版本、回合、結果） |
 
 **暗棋的隱藏資訊**：`view()` 對未翻開的棋子只輸出 `{ id, faceUp: false }`。
-協定層的 `CellViewSchema` 用 discriminated union 讓「蓋牌卻帶身分」在型別與執行時都不合法，
+`games/xiangqi` 的 `CellViewSchema` 用 discriminated union 讓「蓋牌卻帶身分」在型別與執行時都不合法，
 並有測試掃描整份快照 JSON 確認不含未翻開棋子的 `kind`。
 
 ## 5. 多人連線

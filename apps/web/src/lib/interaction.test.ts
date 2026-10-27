@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Match } from '@xiangqi-arena/game-match';
 import { seededRandom } from '@xiangqi-arena/shared';
+import { xiangqiGame } from '@xiangqi-arena/games-xiangqi';
 import { handleSquareClick, toBoardModel } from './interaction';
 
 const sq = (file: number, rank: number) => rank * 9 + file;
 
 describe('board interaction', () => {
-  const m = new Match({
-    mode: 'xiangqi',
+  const m = new Match(xiangqiGame, {
+    mode: 'classic',
     timeControl: null,
     random: seededRandom(1),
     firstSeat: 0,
@@ -43,7 +44,7 @@ describe('board interaction', () => {
   });
 
   it('banqi: click on hidden piece flips it', () => {
-    const b = new Match({
+    const b = new Match(xiangqiGame, {
       mode: 'banqi',
       timeControl: null,
       random: seededRandom(3),

@@ -1,72 +1,54 @@
 import {
   createClock,
   flaggedSeat,
-  otherSeat,
   pressClock,
   remainingAt,
   startClock,
   stopClock,
   type ClockState,
-  type Outcome,
-  type Seat,
-  type Side,
+  type GameDefinition,
+  type MatchOutcome,
+  type PlatformWinReason,
+  type SeatIndex,
   type TimeControl,
 } from '@xiangqi-arena/game-core';
-import {
-  applyBanqiAction,
-  createBanqiGame,
-  endBanqiGame,
-  legalBanqiActions,
-  sideOfSeat,
-  type BanqiRules,
-  type BanqiState,
-} from '@xiangqi-arena/game-banqi';
-import {
-  applyXiangqiMove,
-  checkedKingSquare,
-  createXiangqiGame,
-  endXiangqiGame,
-  getLegalMoves,
-  type XiangqiRules,
-  type XiangqiState,
-} from '@xiangqi-arena/game-xiangqi';
-import type {
-  CellView,
-  ClockView,
-  ErrorCode,
-  GameAction,
-  GameMode,
-  GameView,
-  LastAction,
-} from '@xiangqi-arena/game-protocol';
+import type { ClockView, MatchViewBase } from '@xiangqi-arena/game-protocol';
 import { err, ok, type RandomInt, type Result } from '@xiangqi-arena/shared';
 
-export interface MatchOptions {
-  mode: GameMode;
+/** 平台層的錯誤碼；遊戲自己的錯誤碼（例如 NOT_YOUR_PIECE）會原樣傳出 */
+export type MatchErrorCode =
+  | 'DUPLICATE'
+  | 'GAME_NOT_ACTIVE'
+  | 'NOT_YOUR_TURN'
+  | 'STALE_VERSION'
+  | 'ILLEGAL_ACTION'
+  | 'NO_DRAW_OFFER'
+  | 'DRAW_OFFER_LIMIT'
+  | 'NOT_SUPPORTED'
+  | (string & {});
+
+export interface MatchOptions<Mode extends string> {
+  mode: Mode;
+  /** 本局座位數，需在遊戲的 players.min ~ players.max 之間 */
+  seats?: number;
   timeControl: TimeControl | null;
   random: RandomInt;
-  /** 象棋：執紅的座位；暗棋：先手座位。省略則隨機 */
-  firstSeat?: Seat;
-  xiangqiRules?: Partial<XiangqiRules>;
-  banqiRules?: Partial<BanqiRules>;
-  /** 直接指定象棋開局 FEN（殘局 / 測試） */
-  xiangqiFen?: string;
+  /** 先手 / 執紅的座位；省略則隨機 */
+  firstSeat?: SeatIndex;
   now: number;
 }
-
-type ModeState =
-  { mode: 'xiangqi'; state: XiangqiState; redSeat: Seat } | { mode: 'banqi'; state: BanqiState };
 
 export interface ActionIntent {
   actionId: string;
   expectedVersion: number;
-  action: GameAction;
+  /** 尚未驗證的原始動作，交給遊戲的 parseAction 驗證 */
+  action: unknown;
 }
 
-export interface MatchLogEntry {
+export interface MatchLogEntry<Action = unknown> {
   ply: number;
-  seat: Seat;
-  action: GameAction;
+  seat: SeatIndex;
+  action: Action;
   notation: string;
   at: number;
   thinkMs: number;
@@ -74,82 +56,89 @@ export interface MatchLogEntry {
 
 const DEDUP_WINDOW = 512;
 
+/** 合併了平台欄位的畫面資料 */
+export type MatchView<View> = MatchViewBase & View;
+
 /**
- * 一場對局的權威狀態機：座位、回合、計時、和棋提議、版本與重複封包。
- * 與 Colyseus、React 完全無關，伺服器與本機練習模式共用。
+ * 一場對局的權威狀態機：回合、計時、和棋提議、認輸、版本與重複封包。
+ * 規則全部委派給 GameDefinition；與 Colyseus、React 完全無關，伺服器與本機模式共用。
  */
-export class Match {
-  readonly mode: GameMode;
+export class Match<State, Action, View, Mode extends string = string> {
+  readonly mode: Mode;
+  readonly seats: number;
   readonly timeControl: TimeControl | null;
   readonly startedAt: number;
   endedAt: number | null = null;
-  private game: ModeState;
+  private state: State;
   private clock: ClockState | null;
   private _version = 0;
-  private _outcome: Outcome | null = null;
-  private _drawOffer: Seat | null = null;
-  private drawOfferPly: [number, number] = [-1, -1];
+  private _outcome: MatchOutcome | null = null;
+  private _drawOffer: SeatIndex | null = null;
+  private drawOfferPly: number[];
+  private ply = 0;
   private seenActionIds = new Set<string>();
   private seenOrder: string[] = [];
   private turnStartedAt: number;
-  readonly log: MatchLogEntry[] = [];
+  readonly log: MatchLogEntry<Action>[] = [];
 
-  constructor(options: MatchOptions) {
+  constructor(
+    readonly definition: GameDefinition<State, Action, View, Mode>,
+    options: MatchOptions<Mode>,
+  ) {
+    const { players } = definition;
+    this.seats = options.seats ?? players.min;
+    if (this.seats < players.min || this.seats > players.max) {
+      throw new Error(
+        `${definition.id} needs ${players.min}-${players.max} seats, got ${this.seats}`,
+      );
+    }
+    if (!definition.modes.some((m) => m.id === options.mode)) {
+      throw new Error(`${definition.id} has no mode ${options.mode}`);
+    }
     this.mode = options.mode;
-    this.timeControl = options.timeControl;
+    this.timeControl = definition.features.clock ? options.timeControl : null;
     this.startedAt = options.now;
     this.turnStartedAt = options.now;
-    const firstSeat = options.firstSeat ?? (options.random(2) as Seat);
-    if (options.mode === 'xiangqi') {
-      this.game = {
-        mode: 'xiangqi',
-        state: createXiangqiGame({ fen: options.xiangqiFen, rules: options.xiangqiRules }),
-        redSeat: firstSeat,
-      };
-    } else {
-      this.game = {
-        mode: 'banqi',
-        state: createBanqiGame({
-          random: options.random,
-          rules: options.banqiRules,
-          firstSeat,
-        }),
-      };
-    }
-    this.clock = options.timeControl ? createClock(options.timeControl) : null;
-    const turn = this.turnSeat;
-    if (this.clock && turn !== null) this.clock = startClock(this.clock, turn, options.now);
+    this.drawOfferPly = Array.from({ length: this.seats }, () => -1);
+    this.state = definition.setup({
+      mode: options.mode,
+      seats: this.seats,
+      random: options.random,
+      firstSeat: options.firstSeat ?? options.random(this.seats),
+    });
+    this.clock = this.timeControl ? createClock(this.timeControl, this.seats) : null;
+    this.restartClock(options.now);
   }
 
   get version(): number {
     return this._version;
   }
-  get outcome(): Outcome | null {
+  get outcome(): MatchOutcome | null {
     return this._outcome;
   }
-  get drawOffer(): Seat | null {
+  get drawOffer(): SeatIndex | null {
     return this._drawOffer;
   }
   get isOver(): boolean {
     return this._outcome !== null;
   }
-  get ply(): number {
-    return this.game.state.ply;
+  get plyCount(): number {
+    return this.ply;
   }
 
-  get turnSeat(): Seat | null {
-    if (this._outcome) return null;
-    if (this.game.mode === 'xiangqi') {
-      return this.game.state.turn === 'red' ? this.game.redSeat : otherSeat(this.game.redSeat);
-    }
-    return this.game.state.turn;
+  get activeSeats(): SeatIndex[] {
+    if (this._outcome) return [];
+    return this.definition.activeSeats(this.state);
   }
 
-  seatSide(seat: Seat): Side | null {
-    if (this.game.mode === 'xiangqi') {
-      return seat === this.game.redSeat ? 'red' : 'black';
-    }
-    return sideOfSeat(this.game.state, seat);
+  /** 只有一個座位可以行動時的那個座位；否則 null */
+  get turnSeat(): SeatIndex | null {
+    const active = this.activeSeats;
+    return active.length === 1 ? active[0]! : null;
+  }
+
+  seatLabel(seat: SeatIndex): string | null {
+    return this.definition.seatLabel?.(this.state, seat) ?? null;
   }
 
   /** 記錄 actionId；重複則回傳 false */
@@ -164,89 +153,90 @@ export class Match {
     return true;
   }
 
-  submitAction(seat: Seat, intent: ActionIntent, now: number): Result<void, ErrorCode> {
+  /** 計時器跟著「唯一可行動的座位」走；多人同時可行動時暫停 */
+  private restartClock(now: number, pressedBy: SeatIndex | null = null): void {
+    if (!this.clock || !this.timeControl) return;
+    const next = this.turnSeat;
+    if (pressedBy !== null) {
+      this.clock = pressClock(this.clock, pressedBy, next, now, this.timeControl.incrementMs);
+    } else if (next !== null) {
+      this.clock = startClock(this.clock, next, now);
+    } else {
+      this.clock = stopClock(this.clock, now);
+    }
+  }
+
+  submitAction(seat: SeatIndex, intent: ActionIntent, now: number): Result<void, MatchErrorCode> {
     if (this.seenActionIds.has(intent.actionId)) return err('DUPLICATE');
     if (this.tick(now)) return err('GAME_NOT_ACTIVE');
     if (this._outcome) return err('GAME_NOT_ACTIVE');
-    if (seat !== this.turnSeat) return err('NOT_YOUR_TURN');
+    if (!this.activeSeats.includes(seat)) return err('NOT_YOUR_TURN');
     if (intent.expectedVersion !== this._version) return err('STALE_VERSION');
+    const action = this.definition.parseAction(intent.action);
+    if (action === null) return err('ILLEGAL_ACTION');
 
-    const { action } = intent;
-    let notation: string;
-    if (this.game.mode === 'xiangqi') {
-      if (action.kind !== 'move') return err('ILLEGAL_ACTION');
-      const side = this.seatSide(seat);
-      if (!side) return err('NOT_YOUR_TURN');
-      const r = applyXiangqiMove(this.game.state, side, action.from, action.to);
-      if (!r.ok) {
-        return err(r.error === 'NOT_YOUR_PIECE' ? 'NOT_YOUR_PIECE' : 'ILLEGAL_ACTION');
-      }
-      this.game = { ...this.game, state: r.value };
-      notation = r.value.history.at(-1)?.notation ?? '';
-    } else {
-      const r = applyBanqiAction(
-        this.game.state,
-        seat,
-        action.kind === 'flip'
-          ? { type: 'flip', square: action.square }
-          : { type: 'move', from: action.from, to: action.to },
-      );
-      if (!r.ok) {
-        switch (r.error) {
-          case 'NOT_YOUR_PIECE':
-            return err('NOT_YOUR_PIECE');
-          case 'NOT_YOUR_TURN':
-            return err('NOT_YOUR_TURN');
-          case 'ALREADY_FACE_UP':
-          case 'NO_PIECE':
-            return err(action.kind === 'flip' ? 'CANNOT_FLIP' : 'ILLEGAL_ACTION');
-          default:
-            return err('ILLEGAL_ACTION');
-        }
-      }
-      this.game = { ...this.game, state: r.value };
-      notation = r.value.history.at(-1)?.notation ?? '';
-    }
+    const r = this.definition.apply(this.state, seat, action);
+    if (!r.ok) return err(r.error);
+    this.state = r.value.state;
+    this.ply++;
 
     this.remember(intent.actionId);
     this.log.push({
-      ply: this.game.state.ply,
+      ply: this.ply,
       seat,
       action,
-      notation,
+      notation: r.value.notation,
       at: now,
       thinkMs: now - this.turnStartedAt,
     });
     this.turnStartedAt = now;
-    // 對手走棋視同拒絕和棋提議
+    // 對手行動視同拒絕和棋提議
     if (this._drawOffer !== null && this._drawOffer !== seat) this._drawOffer = null;
 
-    const engineOutcome = this.engineOutcome();
-    if (engineOutcome) {
-      this.finish(engineOutcome, now);
-    } else if (this.clock && this.timeControl) {
-      this.clock = pressClock(this.clock, seat, otherSeat(seat), now, this.timeControl.incrementMs);
+    const ruleOutcome = this.definition.outcome(this.state);
+    if (ruleOutcome) {
+      this.finish(ruleOutcome, now);
+    } else {
+      this.restartClock(now, this.clock?.running === seat ? seat : null);
     }
     this._version++;
     return ok(undefined);
   }
 
-  resign(seat: Seat, actionId: string, now: number): Result<void, ErrorCode> {
+  private forfeitOutcome(seat: SeatIndex, reason: PlatformWinReason): MatchOutcome {
+    if (this.definition.forfeit) return this.definition.forfeit(this.state, seat, reason);
+    // 兩人遊戲的預設：對手獲勝
+    return { type: 'win', winner: seat === 0 ? 1 : 0, reason };
+  }
+
+  private canForfeitByDefault(): boolean {
+    return this.definition.forfeit !== undefined || this.seats === 2;
+  }
+
+  resign(seat: SeatIndex, actionId: string, now: number): Result<void, MatchErrorCode> {
     if (this.seenActionIds.has(actionId)) return err('DUPLICATE');
     if (this._outcome) return err('GAME_NOT_ACTIVE');
+    if (!this.definition.features.resign || !this.canForfeitByDefault()) {
+      return err('NOT_SUPPORTED');
+    }
     this.remember(actionId);
-    this.finish({ type: 'win', winner: otherSeat(seat), reason: 'resign' }, now);
+    this.finish(this.forfeitOutcome(seat, 'resign'), now);
     this._version++;
     return ok(undefined);
   }
 
-  offerDraw(seat: Seat, actionId: string, now: number): Result<void, ErrorCode> {
+  private drawOffersEnabled(): boolean {
+    return this.definition.features.drawOffers && this.seats === 2;
+  }
+
+  offerDraw(seat: SeatIndex, actionId: string, now: number): Result<void, MatchErrorCode> {
     if (this.seenActionIds.has(actionId)) return err('DUPLICATE');
     if (this._outcome) return err('GAME_NOT_ACTIVE');
+    if (!this.drawOffersEnabled()) return err('NOT_SUPPORTED');
     if (this.drawOfferPly[seat] === this.ply) return err('DRAW_OFFER_LIMIT');
     this.remember(actionId);
     // 對方已提議和棋時再提議 = 接受
-    if (this._drawOffer === otherSeat(seat)) {
+    if (this._drawOffer !== null && this._drawOffer !== seat) {
       return this.respondDraw(seat, actionId, true, now, true);
     }
     this._drawOffer = seat;
@@ -256,12 +246,12 @@ export class Match {
   }
 
   respondDraw(
-    seat: Seat,
+    seat: SeatIndex,
     actionId: string,
     accept: boolean,
     now: number,
     alreadyRemembered = false,
-  ): Result<void, ErrorCode> {
+  ): Result<void, MatchErrorCode> {
     if (!alreadyRemembered && this.seenActionIds.has(actionId)) return err('DUPLICATE');
     if (this._outcome) return err('GAME_NOT_ACTIVE');
     if (this._drawOffer === null || this._drawOffer === seat) return err('NO_DRAW_OFFER');
@@ -273,9 +263,9 @@ export class Match {
   }
 
   /** 斷線過久等外部判負 */
-  forfeit(seat: Seat, reason: 'abandon' | 'timeout', now: number): void {
-    if (this._outcome) return;
-    this.finish({ type: 'win', winner: otherSeat(seat), reason }, now);
+  forfeit(seat: SeatIndex, reason: 'abandon' | 'timeout', now: number): void {
+    if (this._outcome || !this.canForfeitByDefault()) return;
+    this.finish(this.forfeitOutcome(seat, reason), now);
     this._version++;
   }
 
@@ -283,8 +273,8 @@ export class Match {
   tick(now: number): boolean {
     if (this._outcome || !this.clock) return false;
     const flagged = flaggedSeat(this.clock, now);
-    if (flagged === null) return false;
-    this.finish({ type: 'win', winner: otherSeat(flagged), reason: 'timeout' }, now);
+    if (flagged === null || !this.canForfeitByDefault()) return false;
+    this.finish(this.forfeitOutcome(flagged, 'timeout'), now);
     this._version++;
     return true;
   }
@@ -295,164 +285,59 @@ export class Match {
     return remainingAt(this.clock, this.clock.running, now);
   }
 
-  private engineOutcome(): Outcome | null {
-    const o = this.game.state.outcome;
-    if (!o) return null;
-    if (o.type === 'draw') return o;
-    if (this.game.mode === 'xiangqi') {
-      const winnerSide = (o as { winner: Side }).winner;
-      const winner = winnerSide === 'red' ? this.game.redSeat : otherSeat(this.game.redSeat);
-      return { type: 'win', winner, reason: o.reason };
-    }
-    return o as Outcome;
-  }
-
-  private finish(outcome: Outcome, now: number): void {
+  private finish(outcome: MatchOutcome, now: number): void {
     this._outcome = outcome;
     this._drawOffer = null;
     this.endedAt = now;
     if (this.clock) this.clock = stopClock(this.clock, now);
-    if (this.game.mode === 'xiangqi') {
-      const o =
-        outcome.type === 'draw'
-          ? outcome
-          : {
-              type: 'win' as const,
-              winner: (outcome.winner === this.game.redSeat ? 'red' : 'black') as Side,
-              reason: outcome.reason,
-            };
-      this.game = { ...this.game, state: endXiangqiGame(this.game.state, o) };
-    } else {
-      this.game = { ...this.game, state: endBanqiGame(this.game.state, outcome) };
-    }
+    if (this.definition.end) this.state = this.definition.end(this.state, outcome);
   }
 
   clockView(now: number): ClockView | null {
     if (!this.clock || !this.timeControl) return null;
     return {
-      remainingMs: [remainingAt(this.clock, 0, now), remainingAt(this.clock, 1, now)],
+      remainingMs: Array.from({ length: this.seats }, (_, s) => remainingAt(this.clock!, s, now)),
       running: this.clock.running,
       incrementMs: this.timeControl.incrementMs,
     };
   }
 
-  /**
-   * 依觀看者產生遊戲畫面資料。暗棋未翻開的棋子只輸出 id，
-   * 絕不包含身分；legalActions 只給輪到的觀看者。
-   */
-  view(viewer: Seat | null): GameView {
-    const turnSeat = this.turnSeat;
-    const seatSides: [Side | null, Side | null] = [this.seatSide(0), this.seatSide(1)];
-    const showLegal = viewer !== null && viewer === turnSeat;
-
-    if (this.game.mode === 'xiangqi') {
-      const s = this.game.state;
-      const redSeat = this.game.redSeat;
-      const seatOf = (side: Side): Seat => (side === 'red' ? redSeat : otherSeat(redSeat));
-      const last = s.history.at(-1);
-      const lastAction: LastAction | null = last
-        ? {
-            ply: last.ply,
-            seat: seatOf(last.side),
-            kind: 'move',
-            from: last.from,
-            to: last.to,
-            pieceId: last.pieceId,
-            captured: last.captured ? { side: last.captured.side, kind: last.captured.kind } : null,
-            revealed: null,
-          }
-        : null;
-      const captured = {
-        red: [] as GameView['captured']['red'],
-        black: [] as GameView['captured']['black'],
-      };
-      for (const m of s.history) if (m.captured) captured[m.captured.side].push(m.captured.kind);
-      return {
-        mode: 'xiangqi',
-        version: this._version,
-        turnSeat,
-        seatSides,
-        board: s.board.map((p): CellView =>
-          p ? { id: p.id, faceUp: true, side: p.side, kind: p.kind } : null,
-        ),
-        legalActions: showLegal
-          ? getLegalMoves(s).map((m) => ({ kind: 'move' as const, from: m.from, to: m.to }))
-          : [],
-        lastAction,
-        checkSquare: this._outcome && this._outcome.type === 'draw' ? null : checkedKingSquare(s),
-        moveList: s.history.map((m) => ({
-          ply: m.ply,
-          seat: seatOf(m.side),
-          side: m.side,
-          notation: m.notation,
-        })),
-        captured,
-        outcome: this._outcome,
-        progress: { plySinceProgress: s.plySinceCapture, limit: s.rules.moveLimitPlies },
-      };
-    }
-
-    const s = this.game.state;
-    const last = s.history.at(-1);
-    const lastAction: LastAction | null = last
-      ? {
-          ply: last.ply,
-          seat: last.seat,
-          kind: last.action.type,
-          from: last.action.type === 'move' ? last.action.from : null,
-          to: last.action.type === 'move' ? last.action.to : last.action.square,
-          pieceId: last.pieceId,
-          captured: last.captured,
-          revealed: last.revealed,
-        }
-      : null;
+  /** 依觀看者產生畫面資料：遊戲負責過濾隱藏資訊，平台補上回合與結果 */
+  view(viewer: SeatIndex | null): MatchView<View> {
+    const active = this.activeSeats;
     return {
-      mode: 'banqi',
+      ...this.definition.view(this.state, viewer),
+      gameId: this.definition.id,
+      mode: this.mode,
       version: this._version,
-      turnSeat,
-      seatSides,
-      board: s.cells.map((c): CellView => {
-        if (!c) return null;
-        if (!c.faceUp) return { id: c.id, faceUp: false };
-        return { id: c.id, faceUp: true, side: c.side, kind: c.kind };
-      }),
-      legalActions: showLegal
-        ? legalBanqiActions(s, viewer).map((a) =>
-            a.type === 'flip'
-              ? { kind: 'flip' as const, square: a.square }
-              : { kind: 'move' as const, from: a.from, to: a.to },
-          )
-        : [],
-      lastAction,
-      checkSquare: null,
-      moveList: s.history.map((h) => ({
-        ply: h.ply,
-        seat: h.seat,
-        side: s.seatSides ? s.seatSides[h.seat] : null,
-        notation: h.notation,
-      })),
-      captured: { red: [...s.captured.red], black: [...s.captured.black] },
+      activeSeats: active,
+      turnSeat: active.length === 1 ? active[0]! : null,
       outcome: this._outcome,
-      progress: { plySinceProgress: s.plySinceProgress, limit: s.rules.noProgressDrawPlies },
     };
   }
 
   /** 對局結束後寫入資料庫用的摘要 */
   summary(): {
-    mode: GameMode;
+    gameId: string;
+    mode: Mode;
     startedAt: number;
     endedAt: number | null;
-    outcome: Outcome | null;
-    seatSides: [Side | null, Side | null];
-    moves: MatchLogEntry[];
+    outcome: MatchOutcome | null;
+    seatLabels: (string | null)[];
+    moves: MatchLogEntry<Action>[];
   } {
     return {
+      gameId: this.definition.id,
       mode: this.mode,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
       outcome: this._outcome,
-      seatSides: [this.seatSide(0), this.seatSide(1)],
+      seatLabels: Array.from({ length: this.seats }, (_, s) => this.seatLabel(s)),
       moves: [...this.log],
     };
   }
 }
+
+/** 註冊表中型別各異的對局 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyMatch = Match<any, any, any, string>;
