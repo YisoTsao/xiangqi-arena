@@ -6,6 +6,8 @@ import {
   type Ack,
   type RoomSnapshot,
 } from '@xiangqi-arena/game-protocol';
+import { BigTwoMatchViewSchema, hintsForView } from '@xiangqi-arena/games-big-two';
+import { buildMatchRows } from '../src/persistence';
 import {
   RoomController,
   UnknownGameError,
@@ -327,5 +329,55 @@ describe('RoomController game binding', () => {
       mode: 'classic',
       timeControl: 'unlimited',
     });
+  });
+});
+
+describe('RoomController with a four-player game', () => {
+  it('runs a full Big Two match with four seats, hiding hands and recording placements', () => {
+    let now = 0;
+    const sent: Sent[] = [];
+    const finished: FinishedMatchInfo[] = [];
+    const ctl = new RoomController({
+      roomCode: 'BIG234',
+      gameId: 'big-two',
+      now: () => now,
+      random: seededRandom(9),
+      send: (clientId, channel, payload) => sent.push({ clientId, channel, payload }),
+      onMatchFinished: (info) => finished.push(info),
+    });
+    expect(ctl.seatCount).toBe(4);
+    const clients = ['c0', 'c1', 'c2', 'c3'];
+    clients.forEach((id, i) => join(ctl, id, `token-big-two-${i}-xxxxxxxx`, `P${i}`));
+    expect(join(ctl, 'c4', tokenA)).toEqual({ ok: false, error: 'ROOM_FULL' });
+    for (const id of clients) ctl.handleMessage(id, { type: 'setReady', ready: true });
+    ctl.handleMessage('c0', { type: 'start' });
+    expect(ctl.currentPhase).toBe('playing');
+
+    const hands = clients.map((_, seat) => ctl.snapshotFor(seat).game!.hand as number[]);
+    expect(new Set(hands.flat()).size).toBe(52);
+    expect(ctl.snapshotFor(null).game!.hand).toEqual([]);
+
+    for (let i = 0; i < 400 && ctl.currentPhase === 'playing'; i++) {
+      const turn = ctl.snapshotFor(null).game!.turnSeat!;
+      const view = BigTwoMatchViewSchema.parse(ctl.snapshotFor(turn).game);
+      const best = hintsForView(view, turn)[0];
+      now += 10;
+      ctl.handleMessage(clients[turn]!, {
+        type: 'action',
+        actionId: aid(),
+        expectedVersion: view.version,
+        action: best ? { kind: 'play', cards: best.cards } : { kind: 'pass' },
+      });
+      const ack = [...sent]
+        .reverse()
+        .find((m) => m.clientId === clients[turn] && m.channel === 'ack');
+      expect((ack!.payload as Ack).ok).toBe(true);
+    }
+    expect(ctl.currentPhase).toBe('ended');
+    expect(finished).toHaveLength(1);
+    const rows = buildMatchRows(finished[0]!, finished[0]!.match.summary())!;
+    expect(rows.match).toMatchObject({ game_id: 'big-two', mode: 'standard', result: 'win' });
+    expect(rows.players.map((p) => p.placement).sort()).toEqual([1, 2, 3, 4]);
+    expect(rows.players.filter((p) => p.result === 'win')).toHaveLength(1);
   });
 });
