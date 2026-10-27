@@ -47,6 +47,7 @@ packages/
 games/
   xiangqi           象棋遊戲定義（大盤象棋、暗棋兩種模式）
   big-two           大老二（台灣規則，四人）規則、提示與電腦玩家
+  mahjong           台灣 16 張麻將規則引擎、台數與電腦玩家（對局畫面尚未完成）
   registry          遊戲註冊表
 supabase/           資料結構與 RLS
 docs/               文件
