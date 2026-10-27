@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Home, RefreshCw } from 'lucide-react';
 import type { TimeControlId } from '@xiangqi-arena/game-protocol';
@@ -37,6 +37,8 @@ export function RoomScreen({ code, createGame, createMode, createTimeControl }: 
     retry,
   } = useOnline();
   const started = useRef(false);
+  /** 按下離開後不再顯示「連線中…」，直接等導回首頁 */
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (started.current) return;
@@ -64,10 +66,14 @@ export function RoomScreen({ code, createGame, createMode, createTimeControl }: 
   const xiangqi = useMemo(() => (snapshot ? toXiangqiSnapshot(snapshot) : null), [snapshot]);
   const bigTwo = useMemo(() => (snapshot ? toBigTwoSnapshot(snapshot) : null), [snapshot]);
 
-  const exit = async () => {
-    await leave();
-    router.push('/');
+  // 先導回首頁再斷線：leave() 會清空快照，若先等它完成，畫面會短暫落回「連線中…」
+  const exit = () => {
+    setLeaving(true);
+    router.replace('/');
+    void leave();
   };
+
+  if (leaving) return <div className="min-h-dvh" data-testid="room-leaving" />;
 
   if (status === 'error' || status === 'replaced' || (status === 'offline' && !snapshot)) {
     return (
