@@ -58,6 +58,8 @@ docs/               文件
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)         | 系統架構、技術選型評估與取捨                    |
 | [GAME_RULES.md](docs/GAME_RULES.md)             | **選定的規則體系**、完整規則、待確認的規則決策  |
 | [ART_BIBLE.md](docs/ART_BIBLE.md)               | 色票、字體、材質、燈光、動畫、效能分級          |
+| [CLUB_ART_BIBLE.md](docs/CLUB_ART_BIBLE.md)     | 3D 大廳「暮光遊樂館」的美術規範與 Blender 管線  |
+| [ASSET_MANIFEST.md](docs/ASSET_MANIFEST.md)     | 3D 資產來源、授權與驗收登記                     |
 | [MULTIPLAYER.md](docs/MULTIPLAYER.md)           | 連線協定、伺服器驗證、斷線重連                  |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md)             | 主機比較（Render / Railway / Fly.io）與部署步驟 |
 | [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | 各階段任務、依賴與驗收標準                      |
