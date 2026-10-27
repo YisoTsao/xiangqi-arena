@@ -2,13 +2,22 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DoorOpen, Gamepad2, LogIn, Monitor, Plus, Settings, Swords } from 'lucide-react';
+import {
+  Bot,
+  DoorOpen,
+  Gamepad2,
+  LogIn,
+  Monitor,
+  Plus,
+  Settings,
+  Swords,
+  Users,
+} from 'lucide-react';
 import {
   DEFAULT_TIME_CONTROL,
   TIME_CONTROL_LABELS,
   type TimeControlId,
 } from '@xiangqi-arena/game-protocol';
-import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import { isRoomCode } from '@xiangqi-arena/shared';
 import { Logo } from '../Logo';
 import { Button } from '../ui/button';
@@ -57,18 +66,26 @@ function ModeCard({
   );
 }
 
+/** 首頁「建立房間」可選的遊戲：象棋兩種模式 + 大老二 */
+type CreateChoice = 'classic' | 'banqi' | 'big-two';
+
+const createUrl = (choice: CreateChoice, tc: TimeControlId) =>
+  choice === 'big-two'
+    ? `/room/new?game=big-two&mode=standard&tc=${tc}`
+    : `/room/new?mode=${choice}&tc=${tc}`;
+
 export function HomeScreen() {
   const router = useRouter();
   const [joinOpen, setJoinOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [code, setCode] = useState('');
-  const [mode, setMode] = useState<XiangqiMode>('classic');
+  const [mode, setMode] = useState<CreateChoice>('classic');
   const [tc, setTc] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
   const normalized = code.trim().toUpperCase();
 
-  const create = (m: XiangqiMode, t: TimeControlId = DEFAULT_TIME_CONTROL) =>
-    router.push(`/room/new?mode=${m}&tc=${t}`);
+  const create = (m: CreateChoice, t: TimeControlId = DEFAULT_TIME_CONTROL) =>
+    router.push(createUrl(m, t));
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-5 py-8 sm:py-14">
@@ -82,7 +99,8 @@ export function HomeScreen() {
       <section className="mt-10 flex flex-col items-center text-center sm:mt-16">
         <Logo size="lg" className="animate-rise" />
         <p className="mt-6 max-w-md text-ink-300">
-          精緻 2.5D 棋盤，與朋友即時對弈大盤象棋與台灣暗棋。免註冊，建立房間、分享代碼即可開始。
+          精緻 2.5D
+          棋盤，與朋友即時對弈大盤象棋與台灣暗棋，或四人一起打大老二。免註冊，建立房間、分享代碼即可開始。
         </p>
         <div className="mt-8 flex w-full max-w-sm flex-col gap-3">
           <Button
@@ -146,6 +164,38 @@ export function HomeScreen() {
         </button>
       </section>
 
+      <section className="mt-4 rounded-3xl border border-ink-700 bg-gradient-to-br from-ink-850 to-ink-900 p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-4">
+            <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#fffdf7] to-[#efe6d2] font-serif text-3xl text-ink-950 shadow-[inset_0_-3px_0_rgb(0_0_0/0.15)] ring-2 ring-gold-400/60">
+              ♠
+            </div>
+            <div>
+              <div className="font-serif text-xl font-semibold">大老二</div>
+              <div className="mt-1 text-sm text-ink-400">
+                四人撲克，台灣規則：梅花 3 先出，2 最大，先出完的人贏
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:w-72">
+            <Button
+              variant="primary"
+              onClick={() => create('big-two', 'unlimited')}
+              data-testid="big-two-room"
+            >
+              <Users /> 開四人房
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => router.push('/big-two/practice')}
+              data-testid="big-two-practice"
+            >
+              <Bot /> 和電腦練習
+            </Button>
+          </div>
+        </div>
+      </section>
+
       <footer className="mt-auto pt-12 text-center text-xs text-ink-400">
         Xiangqi Arena · 開源專案 · 以 Next.js、React Three Fiber 與 Colyseus 打造
       </footer>
@@ -184,13 +234,14 @@ export function HomeScreen() {
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="建立私人房間">
         <div className="space-y-4">
           <div className="space-y-2">
-            <span className="text-sm text-ink-300">遊戲模式</span>
-            <Segmented<XiangqiMode>
-              ariaLabel="遊戲模式"
+            <span className="text-sm text-ink-300">遊戲</span>
+            <Segmented<CreateChoice>
+              ariaLabel="遊戲"
               value={mode}
               options={[
                 { value: 'classic', label: '大盤象棋' },
                 { value: 'banqi', label: '暗棋' },
+                { value: 'big-two', label: '大老二（四人）' },
               ]}
               onChange={setMode}
             />

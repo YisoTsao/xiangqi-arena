@@ -28,7 +28,7 @@ importers:
         version: 2.118.0
       colyseus:
         specifier: 0.18.10
-        version: 0.18.10(@colyseus/auth@0.18.4)(@colyseus/core@0.18.23)(@colyseus/redis-driver@0.18.7(@colyseus/core@0.18.23))(@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15))(zod@4.6.7)
+        version: 0.18.10(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/core@0.18.23)(@colyseus/redis-driver@0.18.7(@colyseus/core@0.18.23))(@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15))(zod@4.6.7)
     devDependencies:
       '@colyseus/sdk':
         specifier: 0.18.6
@@ -48,6 +48,9 @@ importers:
       '@xiangqi-arena/games':
         specifier: workspace:*
         version: link:../../games/registry
+      '@xiangqi-arena/games-big-two':
+        specifier: workspace:*
+        version: link:../../games/big-two
       '@xiangqi-arena/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -90,6 +93,9 @@ importers:
       '@xiangqi-arena/game-renderer':
         specifier: workspace:*
         version: link:../../packages/game-renderer
+      '@xiangqi-arena/games-big-two':
+        specifier: workspace:*
+        version: link:../../games/big-two
       '@xiangqi-arena/games-xiangqi':
         specifier: workspace:*
         version: link:../../games/xiangqi
@@ -155,11 +161,39 @@ importers:
         specifier: ^4.0.5
         version: 4.1.12(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
+  games/big-two:
+    dependencies:
+      '@xiangqi-arena/game-core':
+        specifier: workspace:*
+        version: link:../../packages/game-core
+      '@xiangqi-arena/game-protocol':
+        specifier: workspace:*
+        version: link:../../packages/game-protocol
+      '@xiangqi-arena/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      zod:
+        specifier: ^4.1.12
+        version: 4.6.7
+    devDependencies:
+      '@xiangqi-arena/game-match':
+        specifier: workspace:*
+        version: link:../../packages/game-match
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.5
+        version: 4.1.12(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+
   games/registry:
     dependencies:
       '@xiangqi-arena/game-core':
         specifier: workspace:*
         version: link:../../packages/game-core
+      '@xiangqi-arena/games-big-two':
+        specifier: workspace:*
+        version: link:../big-two
       '@xiangqi-arena/games-xiangqi':
         specifier: workspace:*
         version: link:../xiangqi
@@ -2954,7 +2988,7 @@ snapshots:
       node-os-utils: 2.0.5
       zod: 4.6.7
 
-  '@colyseus/playground@0.18.6(@colyseus/auth@0.18.4)(@colyseus/core@0.18.23)(zod@4.6.7)':
+  '@colyseus/playground@0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/core@0.18.23)(zod@4.6.7)':
     dependencies:
       '@colyseus/auth': 0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7)
       '@colyseus/better-call': 1.3.3(zod@4.6.7)
@@ -2969,7 +3003,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)':
+  '@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)':
     dependencies:
       '@colyseus/core': 0.18.23(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)
       ioredis: 5.11.1
@@ -3011,7 +3045,7 @@ snapshots:
     dependencies:
       '@colyseus/clock': 2.0.3
 
-  '@colyseus/tools@0.18.10(@colyseus/core@0.18.23)(@colyseus/ws-transport@0.18.4)':
+  '@colyseus/tools@0.18.10(@colyseus/core@0.18.23)(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))':
     dependencies:
       '@colyseus/core': 0.18.23(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)
       '@colyseus/ws-transport': 0.18.4(@colyseus/core@0.18.23)(express@5.3.0)
@@ -3947,16 +3981,16 @@ snapshots:
 
   cluster-key-slot@1.1.1: {}
 
-  colyseus@0.18.10(@colyseus/auth@0.18.4)(@colyseus/core@0.18.23)(@colyseus/redis-driver@0.18.7(@colyseus/core@0.18.23))(@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15))(zod@4.6.7):
+  colyseus@0.18.10(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/core@0.18.23)(@colyseus/redis-driver@0.18.7(@colyseus/core@0.18.23))(@colyseus/redis-presence@0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15))(zod@4.6.7):
     dependencies:
       '@colyseus/auth': 0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7)
       '@colyseus/core': 0.18.23(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)
       '@colyseus/monitor': 0.18.7(@colyseus/core@0.18.23)
-      '@colyseus/playground': 0.18.6(@colyseus/auth@0.18.4)(@colyseus/core@0.18.23)(zod@4.6.7)
+      '@colyseus/playground': 0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/core@0.18.23)(zod@4.6.7)
       '@colyseus/redis-driver': 0.18.7(@colyseus/core@0.18.23)
-      '@colyseus/redis-presence': 0.18.6(@colyseus/auth@0.18.4)(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4)(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)
+      '@colyseus/redis-presence': 0.18.6(@colyseus/auth@0.18.4(@colyseus/core@0.18.23)(express@5.3.0)(zod@4.6.7))(@colyseus/better-call@1.3.3(zod@4.6.7))(@colyseus/schema@5.0.42(typescript@5.9.3))(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))(@pm2/io@6.1.0)(express@5.3.0)(zod@4.6.7)
       '@colyseus/schema': 5.0.42(typescript@5.9.3)
-      '@colyseus/tools': 0.18.10(@colyseus/core@0.18.23)(@colyseus/ws-transport@0.18.4)
+      '@colyseus/tools': 0.18.10(@colyseus/core@0.18.23)(@colyseus/ws-transport@0.18.4(@colyseus/core@0.18.23)(express@5.3.0))
       '@colyseus/ws-transport': 0.18.4(@colyseus/core@0.18.23)(express@5.3.0)
     optionalDependencies:
       vite: 8.3.5(@types/node@22.20.5)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)

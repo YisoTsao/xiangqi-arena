@@ -220,7 +220,7 @@ export class Match<State, Action, View, Mode extends string = string> {
       return err('NOT_SUPPORTED');
     }
     this.remember(actionId);
-    this.finish(this.forfeitOutcome(seat, 'resign'), now);
+    this.finish(this.forfeitOutcome(seat, 'resign'), now, seat);
     this._version++;
     return ok(undefined);
   }
@@ -265,7 +265,7 @@ export class Match<State, Action, View, Mode extends string = string> {
   /** 斷線過久等外部判負 */
   forfeit(seat: SeatIndex, reason: 'abandon' | 'timeout', now: number): void {
     if (this._outcome || !this.canForfeitByDefault()) return;
-    this.finish(this.forfeitOutcome(seat, reason), now);
+    this.finish(this.forfeitOutcome(seat, reason), now, seat);
     this._version++;
   }
 
@@ -274,7 +274,7 @@ export class Match<State, Action, View, Mode extends string = string> {
     if (this._outcome || !this.clock) return false;
     const flagged = flaggedSeat(this.clock, now);
     if (flagged === null || !this.canForfeitByDefault()) return false;
-    this.finish(this.forfeitOutcome(flagged, 'timeout'), now);
+    this.finish(this.forfeitOutcome(flagged, 'timeout'), now, flagged);
     this._version++;
     return true;
   }
@@ -285,12 +285,12 @@ export class Match<State, Action, View, Mode extends string = string> {
     return remainingAt(this.clock, this.clock.running, now);
   }
 
-  private finish(outcome: MatchOutcome, now: number): void {
+  private finish(outcome: MatchOutcome, now: number, forfeitSeat: SeatIndex | null = null): void {
     this._outcome = outcome;
     this._drawOffer = null;
     this.endedAt = now;
     if (this.clock) this.clock = stopClock(this.clock, now);
-    if (this.definition.end) this.state = this.definition.end(this.state, outcome);
+    if (this.definition.end) this.state = this.definition.end(this.state, outcome, forfeitSeat);
   }
 
   clockView(now: number): ClockView | null {
@@ -324,6 +324,8 @@ export class Match<State, Action, View, Mode extends string = string> {
     endedAt: number | null;
     outcome: MatchOutcome | null;
     seatLabels: (string | null)[];
+    /** 名次（1 起算）；遊戲沒有提供時為 null */
+    placements: number[] | null;
     moves: MatchLogEntry<Action>[];
   } {
     return {
@@ -333,6 +335,10 @@ export class Match<State, Action, View, Mode extends string = string> {
       endedAt: this.endedAt,
       outcome: this._outcome,
       seatLabels: Array.from({ length: this.seats }, (_, s) => this.seatLabel(s)),
+      placements:
+        this._outcome && this.definition.placements
+          ? this.definition.placements(this.state, this._outcome)
+          : null,
       moves: [...this.log],
     };
   }
