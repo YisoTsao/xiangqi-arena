@@ -15,7 +15,7 @@ export function Logo({
     <div className={cn('flex items-center gap-3', className)}>
       <div
         className={cn(
-          'relative grid place-items-center rounded-full bg-gradient-to-br from-[#f7ecd2] to-[#d8bf8c] font-serif font-bold text-cinnabar-500 shadow-[inset_0_-3px_0_rgb(0_0_0/0.18),0_6px_20px_-4px_rgb(227_181_91/0.5)] ring-2 ring-gold-400/70',
+          'relative grid place-items-center rounded-full bg-gradient-to-br from-[#f7ecd2] to-[#d8bf8c] font-serif font-bold text-cinnabar-500 shadow-[inset_0_-3px_0_rgb(0_0_0/0.18),0_6px_20px_-4px_rgb(242_181_82/0.5)] ring-2 ring-gold-400/70',
           piece,
         )}
         aria-hidden

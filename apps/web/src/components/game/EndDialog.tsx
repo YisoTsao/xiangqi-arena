@@ -58,7 +58,7 @@ export function EndDialog({
             className="pointer-events-none absolute -inset-1/2 animate-rays opacity-40"
             style={{
               background:
-                'repeating-conic-gradient(from 0deg, rgb(227 181 91 / 0.35) 0deg 8deg, transparent 8deg 24deg)',
+                'repeating-conic-gradient(from 0deg, rgb(242 181 82 / 0.35) 0deg 8deg, transparent 8deg 24deg)',
             }}
           />
         )}

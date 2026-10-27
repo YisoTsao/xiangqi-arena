@@ -4,7 +4,10 @@ import {
   INTERACTABLES,
   SPAWN,
   TABLES,
+  CAMERA_YAW,
   clearLine,
+  inputToWorld,
+  isInside,
   findPath,
   isFree,
   nearestInteractable,
@@ -46,14 +49,26 @@ describe('暮光遊樂館配置', () => {
     expect(q[1]).toBeGreaterThan(0);
   });
 
-  it('從門口沿中央走道直走，會先出現麻將桌的入座提示', () => {
+  it('按住 W（畫面往上）從騎樓走進門，會先出現麻將桌的入座提示', () => {
     let p = SPAWN;
     let hit = null;
-    for (let i = 0; i < 80 && !hit; i++) {
-      p = slide(p, 0, -0.1);
+    for (let i = 0; i < 120 && !hit; i++) {
+      const yaw = isInside(p) ? CAMERA_YAW.inside : CAMERA_YAW.outside;
+      const [dx, dz] = inputToWorld(0, -1, yaw);
+      p = slide(p, dx * 0.1, dz * 0.1);
       hit = nearestInteractable(p);
     }
     expect(hit?.kind).toBe('table');
+  });
+
+  it('方向鍵依鏡頭角度旋轉', () => {
+    expect(inputToWorld(0, -1, 0)).toEqual([0, -1]);
+    const [x, z] = inputToWorld(0, -1, CAMERA_YAW.inside);
+    expect(x).toBeLessThan(0);
+    expect(z).toBeLessThan(0);
+    const [rx, rz] = inputToWorld(1, 0, CAMERA_YAW.inside);
+    expect(rx).toBeGreaterThan(0);
+    expect(rz).toBeLessThan(0);
   });
 });
 

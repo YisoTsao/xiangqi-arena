@@ -57,12 +57,12 @@ const NIGHT: Lighting = {
   sky: hex(0x24344d),
   fog: hex(0x3a3460),
   sun: hex(0x8fa6d8),
-  sunIntensity: 0.35,
+  sunIntensity: 0.3,
   sunElevation: 0.9,
   sunAzimuth: 2.2,
   hemiSky: hex(0x4a5a8a),
   hemiGround: hex(0x241c2a),
-  hemiIntensity: 0.55,
+  hemiIntensity: 0.4,
   neon: 1,
 };
 const MORNING: Lighting = {

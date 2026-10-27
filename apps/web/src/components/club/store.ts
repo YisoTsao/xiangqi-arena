@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { SPAWN, type Interactable, type Vec2 } from './layout';
+import { INTERACTABLES, SPAWN, findPath, type Interactable, type Vec2 } from './layout';
 
 /**
  * title：開場的街口全景 + 選單
@@ -65,3 +65,24 @@ export const useClub = create<ClubState>((set) => ({
     set({ mode: 'title', inside: false, nearby: null, seatedAt: null, bubble: null });
   },
 }));
+
+/** 點地面或點物件：沿著尋路結果走過去 */
+export function walkTo(target: Vec2): void {
+  if (useClub.getState().mode !== 'walk') return;
+  player.path = findPath(player.pos, target);
+}
+
+/** 「帶我去空桌」：走到離角色最近的麻將桌旁 */
+export function walkToNearestTable(): void {
+  let best: Interactable | null = null;
+  let bestD = Infinity;
+  for (const it of INTERACTABLES) {
+    if (it.kind !== 'table') continue;
+    const d = Math.hypot(it.approach[0] - player.pos[0], it.approach[1] - player.pos[1]);
+    if (d < bestD) {
+      best = it;
+      bestD = d;
+    }
+  }
+  if (best) walkTo(best.approach);
+}
