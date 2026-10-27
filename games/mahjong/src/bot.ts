@@ -6,6 +6,7 @@ import {
   type MahjongState,
 } from './engine';
 import { isHonor, kindCounts, kindOf, type Tile } from './tiles';
+import type { MahjongActionInput, MahjongView } from './schema';
 
 /**
  * 一張牌對手牌的「黏性」：同種越多、旁邊的牌越多越有用。電腦先打最沒用的牌。
@@ -63,5 +64,52 @@ export function botAction(state: MahjongState, seat: number): MahjongAction {
     case 'hand-end':
     case 'over':
       return { type: 'next' };
+  }
+}
+
+/**
+ * 只用觀看者自己看得到的資料（MahjongView）決定動作：前端練習模式與伺服器託管都可以用，
+ * 不需要讀取完整的伺服器狀態。
+ */
+export function botActionForView(view: MahjongView): MahjongActionInput {
+  const phase = view.phase;
+  switch (phase.type) {
+    case 'discard': {
+      if (view.options.win) return { kind: 'win' };
+      const kong = view.options.selfKong[0];
+      if (kong !== undefined) return { kind: 'self-kong', tileKind: kong };
+      const counts = kindCounts(view.hand);
+      let best = view.hand[0]!;
+      let bestScore = Infinity;
+      for (const t of view.hand) {
+        const s = usefulness(counts, t);
+        if (s < bestScore) {
+          best = t;
+          bestScore = s;
+        }
+      }
+      return { kind: 'discard', tile: best };
+    }
+    case 'claim':
+      if (view.options.win) return { kind: 'win' };
+      if (view.options.pung && isHonor(kindOf(phase.tile))) return { kind: 'pung' };
+      return { kind: 'pass' };
+    case 'hand-end':
+    case 'over':
+      return { kind: 'next' };
+  }
+}
+
+/** 引擎動作 → 協定上的動作格式 */
+export function toActionInput(a: MahjongAction): MahjongActionInput {
+  switch (a.type) {
+    case 'discard':
+      return { kind: 'discard', tile: a.tile };
+    case 'self-kong':
+      return { kind: 'self-kong', tileKind: a.kind };
+    case 'chow':
+      return { kind: 'chow', tiles: a.tiles };
+    default:
+      return { kind: a.type };
   }
 }

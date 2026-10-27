@@ -1,5 +1,6 @@
 import { ERROR_MESSAGES, PLATFORM_REASON_LABELS } from '@xiangqi-arena/game-protocol';
 import { BIG_TWO_ERROR_MESSAGES, BIG_TWO_REASON_LABELS } from '@xiangqi-arena/games-big-two';
+import { MAHJONG_ERROR_MESSAGES, MAHJONG_REASON_LABELS } from '@xiangqi-arena/games-mahjong';
 import { XIANGQI_ERROR_MESSAGES, XIANGQI_REASON_LABELS } from '@xiangqi-arena/games-xiangqi';
 
 /** 前端的遊戲目錄：大廳顯示的名稱、模式與規則摘要 */
@@ -63,10 +64,12 @@ export const reasonLabel = (reason: string): string =>
   PLATFORM_REASON_LABELS[reason] ??
   XIANGQI_REASON_LABELS[reason] ??
   BIG_TWO_REASON_LABELS[reason] ??
+  MAHJONG_REASON_LABELS[reason] ??
   reason;
 
 export const errorMessage = (code: string): string =>
   ERROR_MESSAGES[code] ??
   XIANGQI_ERROR_MESSAGES[code] ??
   BIG_TWO_ERROR_MESSAGES[code] ??
+  MAHJONG_ERROR_MESSAGES[code] ??
   '不合法的操作';
