@@ -52,7 +52,7 @@ Xiangqi Arena 是一款**免註冊即可遊玩的線上雙人象棋競技場**�
 | 排行榜、個人戰績頁        | Phase 8  | `player_statistics` 已由觸發器維護          |
 | 公開配對（快速對戰）      | Phase 8  | 目前僅私人房間                              |
 | 觀戰模式                  | Phase 8  | 協定的 `yourSeat: null` 已預留              |
-| 棋譜重播、匯出            | Phase 8  | `game_moves` 已保存完整棋步                 |
+| 棋譜重播、匯出            | Phase 8  | `match_actions` 已保存完整棋步              |
 | PWA 離線快取              | Phase 7+ | 已有 manifest 與圖示，尚未加 service worker |
 | 聊天／表情                | 未排程   | 需要防濫用機制                              |
 | AI 對手                   | 未排程   | 規則引擎已可直接接上搜尋演算法              |
