@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { CatmullRomCurve3, Vector3 } from 'three';
+import { CatmullRomCurve3, SpotLight, Vector3 } from 'three';
 import {
   BENCH,
   DOOR,
@@ -17,7 +17,8 @@ import {
 import { Bake } from './Bake';
 import { Glow, Lantern, Plant, Rounded, Sign, Wood, useNeon, useQuality } from './props';
 import { CLUB } from './signs';
-import { asphalt, cityWindows, facadeTile, pavers, shutter, tiled } from './textures';
+import { cityWindows, facadeTile, shutter, tiled } from './textures';
+import { LampCone, RainyStreet } from './Rain';
 
 type V3 = [number, number, number];
 const FH = HALL.height;
@@ -25,41 +26,24 @@ const FH = HALL.height;
 // ── 地面 ───────────────────────────────────────────────
 
 function Ground() {
-  const walk = useMemo(() => tiled(pavers(), 60, 4), []);
-  const road = useMemo(() => tiled(asphalt(), 24, 2), []);
   return (
     <group>
-      {/* 人行道（騎樓前） */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0, 1.75]} receiveShadow>
-        <planeGeometry args={[120, 3.5]} />
-        <meshStandardMaterial map={walk} roughness={0.85} />
-      </mesh>
+      {/* 人行道與馬路是 Rain.tsx 的濕街面（同一張平面、同一次反射）；這裡只剩遠處地面與立體物 */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[160, 120]} />
-        <meshStandardMaterial color="#6b6058" roughness={0.95} />
+        <meshStandardMaterial color="#3e3833" roughness={0.95} />
       </mesh>
-      {/* 馬路 */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.001, 7.1]} receiveShadow>
-        <planeGeometry args={[120, 7.2]} />
-        <meshStandardMaterial map={road} roughness={0.7} />
-      </mesh>
-      {Array.from({ length: 24 }, (_, i) => (
-        <mesh key={i} rotation-x={-Math.PI / 2} position={[-46 + i * 4, 0.006, 7.1]}>
-          <planeGeometry args={[2, 0.14]} />
-          <meshStandardMaterial color="#e8d9a8" roughness={0.8} />
-        </mesh>
-      ))}
       {/* 斑馬線 */}
       {Array.from({ length: 8 }, (_, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[-13, 0.006, 4.1 + i * 0.85]}>
           <planeGeometry args={[2.6, 0.45]} />
-          <meshStandardMaterial color="#efe6d2" roughness={0.8} />
+          <meshStandardMaterial color="#cfc8b8" roughness={0.32} />
         </mesh>
       ))}
       {/* 人孔蓋 */}
       <mesh rotation-x={-Math.PI / 2} position={[3.5, 0.007, 5.6]}>
         <circleGeometry args={[0.38, 24]} />
-        <meshStandardMaterial color="#3a3640" metalness={1} roughness={0.5} />
+        <meshStandardMaterial color="#3a3640" metalness={1} roughness={0.28} />
       </mesh>
       {/* 緣石 */}
       <Rounded
@@ -662,6 +646,15 @@ const SHOPS: ShopSpec[] = [
 
 function StreetLamp({ x, z }: { x: number; z: number }) {
   const neon = useNeon();
+  const quality = useQuality();
+  // 真的往下照的燈：濕路面上拉出長長的反光（低畫質省略，只留發光燈泡）
+  const spot = useMemo(() => {
+    const l = new SpotLight('#ffd08a', 0, 14, 0.95, 0.55, 1.6);
+    l.position.set(0, 3.8, -0.62);
+    l.target.position.set(0, 0, -0.2);
+    return l;
+  }, []);
+  spot.intensity = neon * 26;
   return (
     <group position={[x, 0, z]}>
       <mesh position-y={2.1} castShadow>
@@ -681,6 +674,13 @@ function StreetLamp({ x, z }: { x: number; z: number }) {
           toneMapped={false}
         />
       </mesh>
+      {quality !== 'low' && neon > 0.05 && (
+        <>
+          <primitive object={spot} />
+          <primitive object={spot.target} />
+          <LampCone position={[0, 3.75, -0.62]} />
+        </>
+      )}
     </group>
   );
 }
@@ -946,24 +946,27 @@ function Skyline() {
 export function Street({ inside }: { inside: boolean }) {
   const quality = useQuality();
   return (
-    <Bake deps={[inside, quality]}>
-      <Ground />
-      <ClubFacade inside={inside} />
-      {SHOPS.map((s) => (
-        <Shophouse key={s.x0} s={s} />
-      ))}
-      <Skyline />
-      {STREET_LAMPS.map(([x, z]) => (
-        <StreetLamp key={x} x={x} z={z} />
-      ))}
-      {!inside && <LanternString />}
-      {quality !== 'low' && <PowerLines />}
-      {SCOOTERS.map(([x, z], i) => (
-        <Scooter key={x} x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
-      ))}
-      <Vending />
-      <Mailboxes />
-      <Planters />
-    </Bake>
+    <>
+      <RainyStreet inside={inside} />
+      <Bake deps={[inside, quality]}>
+        <Ground />
+        <ClubFacade inside={inside} />
+        {SHOPS.map((s) => (
+          <Shophouse key={s.x0} s={s} />
+        ))}
+        <Skyline />
+        {STREET_LAMPS.map(([x, z]) => (
+          <StreetLamp key={x} x={x} z={z} />
+        ))}
+        {!inside && <LanternString />}
+        {quality !== 'low' && <PowerLines />}
+        {SCOOTERS.map(([x, z], i) => (
+          <Scooter key={x} x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
+        ))}
+        <Vending />
+        <Mailboxes />
+        <Planters />
+      </Bake>
+    </>
   );
 }

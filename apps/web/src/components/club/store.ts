@@ -11,6 +11,9 @@ import { INTERACTABLES, SPAWN, findPath, type Interactable, type Vec2 } from './
  */
 export type ClubMode = 'title' | 'intro' | 'walk' | 'seated';
 
+/** 街口天氣：下雨時地面濕亮、會倒映招牌與路燈 */
+export type Weather = 'rain' | 'clear';
+
 /** 每一格畫面都會改的角色狀態放在這裡，不進 React state */
 export const player = {
   pos: [...SPAWN] as [number, number],
@@ -29,6 +32,8 @@ interface ClubState {
   seatedAt: string | null;
   /** NPC 或系統的對白 */
   bubble: { who: string; text: string } | null;
+  weather: Weather;
+  setWeather: (weather: Weather) => void;
   setMode: (mode: ClubMode) => void;
   setInside: (inside: boolean) => void;
   setNearby: (it: Interactable | null) => void;
@@ -44,6 +49,8 @@ export const useClub = create<ClubState>((set) => ({
   nearby: null,
   seatedAt: null,
   bubble: null,
+  weather: 'rain',
+  setWeather: (weather) => set({ weather }),
   setMode: (mode) => set({ mode }),
   setInside: (inside) => set((s) => (s.inside === inside ? s : { inside })),
   setNearby: (nearby) => set((s) => (s.nearby?.id === nearby?.id ? s : { nearby })),
