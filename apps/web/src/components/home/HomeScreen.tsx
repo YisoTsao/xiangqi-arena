@@ -196,6 +196,31 @@ export function HomeScreen() {
         </div>
       </section>
 
+      <section className="mt-4 rounded-3xl border border-ink-700 bg-gradient-to-br from-ink-850 to-ink-900 p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-4">
+            <div className="grid size-14 shrink-0 place-items-center rounded-2xl border-b-4 border-jade-500 bg-gradient-to-br from-[#fffdf7] to-[#efe6d2] font-serif text-3xl text-cinnabar-500 shadow-[inset_0_-3px_0_rgb(0_0_0/0.15)] ring-2 ring-gold-400/60">
+              中
+            </div>
+            <div>
+              <div className="font-serif text-xl font-semibold">麻將</div>
+              <div className="mt-1 text-sm text-ink-400">
+                台灣 16 張，打一將東風圈；線上房間即將開放
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:ml-auto sm:w-72">
+            <Button
+              variant="secondary"
+              onClick={() => router.push('/mahjong/practice')}
+              data-testid="mahjong-practice"
+            >
+              <Bot /> 和電腦練習
+            </Button>
+          </div>
+        </div>
+      </section>
+
       <footer className="mt-auto pt-12 text-center text-xs text-ink-400">
         Xiangqi Arena · 開源專案 · 以 Next.js、React Three Fiber 與 Colyseus 打造
       </footer>

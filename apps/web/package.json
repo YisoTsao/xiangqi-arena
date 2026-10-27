@@ -20,6 +20,7 @@
     "@xiangqi-arena/game-protocol": "workspace:*",
     "@xiangqi-arena/game-renderer": "workspace:*",
     "@xiangqi-arena/games-big-two": "workspace:*",
+    "@xiangqi-arena/games-mahjong": "workspace:*",
     "@xiangqi-arena/games-xiangqi": "workspace:*",
     "@xiangqi-arena/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",

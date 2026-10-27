@@ -14,7 +14,7 @@ import {
   type MahjongAction,
   type MahjongState,
 } from './engine';
-import { botAction } from './bot';
+import { botAction, botActionForView, toActionInput } from './bot';
 import {
   KIND_COUNT,
   isFlower,
@@ -469,15 +469,11 @@ describe('platform integration', () => {
       while (!match.isOver && n < 20_000) {
         const seat = match.activeSeats[0]!;
         const state = (match as unknown as { state: MahjongState }).state;
-        const a = botAction(state, seat);
+        // 一半的座位用完整狀態、一半只看自己的畫面，兩種電腦都要能打完
         const input =
-          a.type === 'discard'
-            ? { kind: 'discard', tile: a.tile }
-            : a.type === 'self-kong'
-              ? { kind: 'self-kong', tileKind: a.kind }
-              : a.type === 'chow'
-                ? { kind: 'chow', tiles: a.tiles }
-                : { kind: a.type };
+          seat % 2 === 0
+            ? toActionInput(botAction(state, seat))
+            : botActionForView(MahjongMatchViewSchema.parse(match.view(seat)));
         const r = match.submitAction(
           seat,
           { actionId: `a${n}`, expectedVersion: match.version, action: input },
