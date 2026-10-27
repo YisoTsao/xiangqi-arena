@@ -98,7 +98,7 @@ export function Lobby({
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-5 px-4 py-6">
       <header className="flex items-center justify-between">
         <Logo size="sm" />
-        <Button variant="ghost" onClick={onLeave}>
+        <Button variant="ghost" onClick={onLeave} data-testid="room-leave">
           <LogOut /> 離開
         </Button>
       </header>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Home, RefreshCw } from 'lucide-react';
 import type { TimeControlId } from '@xiangqi-arena/game-protocol';
@@ -37,6 +37,7 @@ export function RoomScreen({ code, createGame, createMode, createTimeControl }: 
     retry,
   } = useOnline();
   const started = useRef(false);
+  const [left, setLeft] = useState(false);
 
   useEffect(() => {
     if (started.current) return;
@@ -64,10 +65,16 @@ export function RoomScreen({ code, createGame, createMode, createTimeControl }: 
   const xiangqi = useMemo(() => (snapshot ? toXiangqiSnapshot(snapshot) : null), [snapshot]);
   const bigTwo = useMemo(() => (snapshot ? toBigTwoSnapshot(snapshot) : null), [snapshot]);
 
-  const exit = async () => {
-    await leave();
+  // 先導回首頁再斷線：leave() 一開始就清空房間狀態，若等它結束才導頁，
+  // 畫面會停在「連線中…」；連線已斷或伺服器沒回應時甚至永遠等不到
+  const exit = () => {
+    if (left) return;
+    setLeft(true);
     router.push('/');
+    void leave();
   };
+
+  if (left) return <div className="min-h-dvh" data-testid="room-leaving" />;
 
   if (status === 'error' || status === 'replaced' || (status === 'offline' && !snapshot)) {
     return (
@@ -78,7 +85,7 @@ export function RoomScreen({ code, createGame, createMode, createTimeControl }: 
             {error ?? '連線中斷'}
           </p>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => router.push('/')}>
+            <Button variant="secondary" onClick={exit} data-testid="room-home">
               <Home /> 回首頁
             </Button>
             {code !== 'NEW' && (

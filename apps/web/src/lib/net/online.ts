@@ -44,6 +44,8 @@ let client: Client | null = null;
 let room: Room | null = null;
 let inflight: Promise<unknown> | null = null;
 let rejoinTimer: ReturnType<typeof setTimeout> | null = null;
+/** 每次 leave() 加一；連線途中玩家已離開時，晚到的房間要直接退掉 */
+let session = 0;
 
 const getClient = () => (client ??= new Client(gameServerUrl()));
 
@@ -151,12 +153,15 @@ export const useOnline = create<OnlineState>((set, get) => {
     }
     set({ status: 'reconnecting' });
     if (rejoinTimer) clearTimeout(rejoinTimer);
+    const current = session;
     rejoinTimer = setTimeout(
       async () => {
         try {
           const r = await getClient().joinById(code, joinOptions());
+          if (!adopt(r, current)) return;
           bind(r);
         } catch (e) {
+          if (current !== session) return;
           const msg = describeJoinError(e);
           if (/找不到|已滿/.test(msg)) set({ status: 'error', error: msg });
           else scheduleRejoin(attempt + 1);
@@ -164,6 +169,13 @@ export const useOnline = create<OnlineState>((set, get) => {
       },
       Math.min(8000, 500 * 2 ** attempt),
     );
+  };
+
+  /** 連線完成時玩家若已離開，就把這個房間退掉，避免背景殘留連線 */
+  const adopt = (r: Room, current: number): boolean => {
+    if (current === session) return true;
+    void r.leave(true).catch(() => undefined);
+    return false;
   };
 
   const joinOptions = () => ({
@@ -188,6 +200,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     async createRoom(gameId, mode, timeControl) {
       if (inflight) await inflight.catch(() => undefined);
       set({ status: 'connecting', error: null, snapshot: null });
+      const current = session;
       const p = getClient().create(ROOM_NAME, {
         ...joinOptions(),
         gameId,
@@ -197,11 +210,12 @@ export const useOnline = create<OnlineState>((set, get) => {
       inflight = p;
       try {
         const r = await p;
+        if (!adopt(r, current)) return null;
         set({ roomCode: r.roomId });
         bind(r);
         return r.roomId;
       } catch (e) {
-        set({ status: 'error', error: describeJoinError(e) });
+        if (current === session) set({ status: 'error', error: describeJoinError(e) });
         return null;
       } finally {
         inflight = null;
@@ -216,13 +230,16 @@ export const useOnline = create<OnlineState>((set, get) => {
       }
       if (room) await get().leave();
       set({ status: 'connecting', error: null, roomCode: code, snapshot: null });
+      const current = session;
       const p = getClient().joinById(code, joinOptions());
       inflight = p;
       try {
-        bind(await p);
+        const r = await p;
+        if (!adopt(r, current)) return false;
+        bind(r);
         return true;
       } catch (e) {
-        set({ status: 'error', error: describeJoinError(e) });
+        if (current === session) set({ status: 'error', error: describeJoinError(e) });
         return false;
       } finally {
         inflight = null;
@@ -260,6 +277,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     },
 
     async leave() {
+      session++;
       if (rejoinTimer) clearTimeout(rejoinTimer);
       const r = room;
       room = null;
