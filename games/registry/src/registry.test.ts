@@ -23,4 +23,10 @@ describe('game registry', () => {
     expect(g.modes.map((m) => m.id)).toEqual(['classic', 'banqi']);
     expect(hasMode(g, 'xiangqi')).toBe(false);
   });
+
+  it('big two is a four-player game', () => {
+    const g = getGame('big-two')!;
+    expect(g.players).toEqual({ min: 4, max: 4 });
+    expect(g.defaultMode).toBe('standard');
+  });
 });

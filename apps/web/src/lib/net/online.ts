@@ -10,11 +10,13 @@ import {
   RoomSnapshotSchema,
   type ClientIntent,
   type Notice,
+  type RoomSnapshot,
   type TimeControlId,
 } from '@xiangqi-arena/game-protocol';
-import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import type { ConnectionStatus, IntentInput } from '../controller';
-import { GAME_ID, errorMessage, toXiangqiSnapshot, type XiangqiSnapshot } from '../xiangqi';
+import { toBigTwoSnapshot } from '../bigTwo';
+import { errorMessage } from '../games';
+import { toXiangqiSnapshot } from '../xiangqi';
 import { getPlayerName, getPlayerToken } from '../identity';
 import { toast } from '../toast';
 import { randomId } from '../utils';
@@ -28,9 +30,10 @@ interface OnlineState {
   status: ConnectionStatus;
   error: string | null;
   roomCode: string | null;
-  snapshot: XiangqiSnapshot | null;
+  /** 平台欄位已驗證，遊戲欄位也已用該遊戲的 schema 驗證過 */
+  snapshot: RoomSnapshot | null;
   snapshotAt: number;
-  createRoom: (mode: XiangqiMode, timeControl?: TimeControlId) => Promise<string | null>;
+  createRoom: (gameId: string, mode: string, timeControl?: TimeControlId) => Promise<string | null>;
   joinRoom: (code: string) => Promise<boolean>;
   send: (intent: IntentInput) => void;
   leave: () => Promise<void>;
@@ -44,15 +47,33 @@ let rejoinTimer: ReturnType<typeof setTimeout> | null = null;
 
 const getClient = () => (client ??= new Client(gameServerUrl()));
 
-const NOTICE_TEXT: Partial<Record<Notice['kind'], string>> = {
-  drawOffered: '對手提議和棋',
-  drawDeclined: '對手拒絕了和棋',
-  rematchRequested: '對手想再來一局',
-  playerJoined: '對手已加入房間',
-  playerLeft: '對手離開了房間',
-  playerDisconnected: '對手連線中斷，等待重新連線…',
-  playerReconnected: '對手已重新連線',
+const NOTICE_TEXT: Partial<Record<Notice['kind'], (who: string) => string>> = {
+  drawOffered: (who) => `${who}提議和棋`,
+  drawDeclined: (who) => `${who}拒絕了和棋`,
+  rematchRequested: (who) => `${who}想再來一局`,
+  playerJoined: (who) => `${who}已加入房間`,
+  playerLeft: (who) => `${who}離開了房間`,
+  playerDisconnected: (who) => `${who}連線中斷，等待重新連線…`,
+  playerReconnected: (who) => `${who}已重新連線`,
 };
+
+/** 兩人遊戲稱「對手」，多人遊戲用座位上的名字 */
+function noticeSubject(snapshot: RoomSnapshot | null, seat: number | null): string {
+  if (!snapshot || snapshot.seats.length <= 2 || seat === null) return '對手';
+  return `${snapshot.seats[seat]?.name ?? '玩家'} `;
+}
+
+/** 依房間的遊戲驗證遊戲欄位；未知遊戲或格式不符回傳 false */
+function validForGame(snapshot: RoomSnapshot): boolean {
+  switch (snapshot.config.gameId) {
+    case 'xiangqi':
+      return toXiangqiSnapshot(snapshot) !== null;
+    case 'big-two':
+      return toBigTwoSnapshot(snapshot) !== null;
+    default:
+      return false;
+  }
+}
 
 function describeJoinError(e: unknown): string {
   const msg = String((e as Error)?.message ?? e);
@@ -77,7 +98,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     }
     r.onMessage(MSG.snapshot, (raw: unknown) => {
       const parsed = RoomSnapshotSchema.safeParse(raw);
-      const snapshot = parsed.success ? toXiangqiSnapshot(parsed.data) : null;
+      const snapshot = parsed.success && validForGame(parsed.data) ? parsed.data : null;
       if (!snapshot) {
         console.warn('invalid snapshot', parsed.error);
         return;
@@ -100,7 +121,7 @@ export const useOnline = create<OnlineState>((set, get) => {
       const n = NoticeSchema.safeParse(raw);
       if (!n.success) return;
       const text = NOTICE_TEXT[n.data.kind];
-      if (text) toast(text);
+      if (text) toast(text(noticeSubject(get().snapshot, n.data.seat)));
     });
     r.onDrop(() => set({ status: 'reconnecting' }));
     r.onReconnect(() => {
@@ -164,12 +185,12 @@ export const useOnline = create<OnlineState>((set, get) => {
     snapshot: null,
     snapshotAt: 0,
 
-    async createRoom(mode, timeControl) {
+    async createRoom(gameId, mode, timeControl) {
       if (inflight) await inflight.catch(() => undefined);
       set({ status: 'connecting', error: null, snapshot: null });
       const p = getClient().create(ROOM_NAME, {
         ...joinOptions(),
-        gameId: GAME_ID,
+        gameId,
         mode,
         timeControl,
       });

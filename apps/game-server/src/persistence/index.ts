@@ -44,6 +44,7 @@ export function buildMatchRows(info: FinishedMatchInfo, summary: MatchSummary) {
     seat,
     display_name: p.name,
     seat_label: summary.seatLabels[seat] ?? null,
+    placement: summary.placements?.[seat] ?? null,
     result: outcome.type === 'draw' ? 'draw' : outcome.winner === seat ? 'win' : 'loss',
   }));
   const actions = summary.moves.map((m) => ({

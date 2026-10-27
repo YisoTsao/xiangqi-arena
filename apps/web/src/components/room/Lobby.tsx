@@ -2,46 +2,29 @@
 
 import { useState } from 'react';
 import { Check, Copy, Crown, LogOut, Play, Wifi, WifiOff } from 'lucide-react';
-import { TIME_CONTROL_LABELS, type TimeControlId } from '@xiangqi-arena/game-protocol';
-import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
-import type { Seat } from '@xiangqi-arena/game-core';
+import {
+  TIME_CONTROL_LABELS,
+  type RoomSnapshot,
+  type TimeControlId,
+} from '@xiangqi-arena/game-protocol';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Segmented } from '../ui/segmented';
 import { Logo } from '../Logo';
 import type { IntentInput } from '@/lib/controller';
-import type { XiangqiSnapshot } from '@/lib/xiangqi';
+import { GAME_INFO } from '@/lib/games';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
-const MODE_INFO: Record<XiangqiMode, { title: string; rules: string[] }> = {
-  classic: {
-    title: '大盤象棋',
-    rules: [
-      '9×10 棋盤，紅先黑後',
-      '將死或困斃對方即獲勝',
-      '長將、長捉依亞洲規則判負',
-      '連續 60 回合無吃子判和',
-    ],
-  },
-  banqi: {
-    title: '暗棋（台灣規則）',
-    rules: [
-      '4×8 棋盤，32 子全部蓋牌',
-      '第一個翻出的棋子顏色即為你的陣營',
-      '大吃小；兵卒可吃將帥，帥將不能吃兵卒',
-      '炮需隔一子跳吃，不限距離與階級',
-    ],
-  },
-};
+const SEAT_NUMERALS = ['一', '二', '三', '四', '五', '六', '七', '八'];
 
 export function Lobby({
   snapshot,
   send,
   onLeave,
 }: {
-  snapshot: XiangqiSnapshot;
+  snapshot: RoomSnapshot;
   send: (i: IntentInput) => void;
   onLeave: () => void;
 }) {
@@ -49,10 +32,11 @@ export function Lobby({
   const you = snapshot.yourSeat;
   const isHost = you !== null && you === snapshot.hostSeat;
   const me = you !== null ? snapshot.seats[you] : null;
-  const bothReady = !!snapshot.seats[0]?.ready && !!snapshot.seats[1]?.ready;
+  const allReady = snapshot.seats.every((s) => s?.ready);
+  const game = GAME_INFO[snapshot.config.gameId];
+  const info = game?.modes.find((m) => m.value === snapshot.config.mode);
   const inviteUrl =
     typeof window !== 'undefined' ? `${window.location.origin}/room/${snapshot.roomCode}` : '';
-  const info = MODE_INFO[snapshot.config.mode];
 
   const copy = async () => {
     try {
@@ -64,7 +48,7 @@ export function Lobby({
     }
   };
 
-  const seatCard = (seat: Seat) => {
+  const seatCard = (seat: number) => {
     const s = snapshot.seats[seat];
     return (
       <div
@@ -82,7 +66,7 @@ export function Lobby({
             s ? 'bg-gold-400/15 text-gold-300' : 'bg-ink-800 text-ink-400',
           )}
         >
-          {seat === 0 ? '一' : '二'}
+          {SEAT_NUMERALS[seat]}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -134,26 +118,25 @@ export function Lobby({
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2">{([0, 1] as const).map(seatCard)}</div>
+      <div className="grid gap-3 sm:grid-cols-2">{snapshot.seats.map((_, i) => seatCard(i))}</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>遊戲設定</CardTitle>
+          <CardTitle>{game ? `${game.name} · 遊戲設定` : '遊戲設定'}</CardTitle>
           {!isHost && <p className="text-xs text-ink-400">由房主選擇模式與時間</p>}
         </CardHeader>
         <CardContent className="space-y-4">
-          <Segmented<XiangqiMode>
-            ariaLabel="遊戲模式"
-            value={snapshot.config.mode}
-            disabled={!isHost}
-            options={[
-              { value: 'classic', label: '大盤象棋' },
-              { value: 'banqi', label: '暗棋' },
-            ]}
-            onChange={(mode) =>
-              send({ type: 'configure', mode, timeControl: snapshot.config.timeControl })
-            }
-          />
+          {game && game.modes.length > 1 && (
+            <Segmented<string>
+              ariaLabel="遊戲模式"
+              value={snapshot.config.mode}
+              disabled={!isHost}
+              options={game.modes}
+              onChange={(mode) =>
+                send({ type: 'configure', mode, timeControl: snapshot.config.timeControl })
+              }
+            />
+          )}
           <Segmented<TimeControlId>
             ariaLabel="計時"
             value={snapshot.config.timeControl}
@@ -167,7 +150,7 @@ export function Lobby({
             }
           />
           <ul className="grid gap-1.5 text-sm text-ink-300 sm:grid-cols-2">
-            {info.rules.map((r) => (
+            {info?.rules.map((r) => (
               <li key={r} className="flex gap-2">
                 <span className="text-gold-400">◆</span>
                 {r}
@@ -189,11 +172,18 @@ export function Lobby({
         <Button
           size="lg"
           variant="primary"
-          disabled={!isHost || !bothReady}
+          disabled={!isHost || !allReady}
           onClick={() => send({ type: 'start' })}
           data-testid="start-game"
         >
-          <Play /> {isHost ? (bothReady ? '開始遊戲' : '等待雙方準備') : '等待房主開始'}
+          <Play />{' '}
+          {isHost
+            ? allReady
+              ? '開始遊戲'
+              : snapshot.seats.length > 2
+                ? `等待 ${snapshot.seats.length} 位玩家到齊並準備`
+                : '等待雙方準備'
+            : '等待房主開始'}
         </Button>
       </div>
     </div>

@@ -54,12 +54,17 @@ export interface GameDefinition<State, Action, View, Mode extends string = strin
   apply(state: State, seat: SeatIndex, action: Action): Result<AppliedAction<State>, GameErrorCode>;
   /** 規則判定的結果（將死、無子可走等）；未結束回傳 null */
   outcome(state: State): MatchOutcome | null;
-  /** 平台判定結束（認輸、超時、和棋）時，讓遊戲把結果寫進自己的狀態 */
-  end?(state: State, outcome: MatchOutcome): State;
+  /**
+   * 平台判定結束（認輸、超時、和棋）時，讓遊戲把結果寫進自己的狀態。
+   * forfeitSeat = 認輸、超時或斷線被判負的座位；和棋時為 null
+   */
+  end?(state: State, outcome: MatchOutcome, forfeitSeat: SeatIndex | null): State;
   /** 依觀看者產生畫面資料，必須濾掉觀看者不該知道的資訊；viewer = null 表示觀戰 */
   view(state: State, viewer: SeatIndex | null): View;
   /** 座位在這局的陣營標籤（例如 red / black），寫入資料庫用 */
   seatLabel?(state: State, seat: SeatIndex): string | null;
+  /** 多人遊戲的名次（1 起算，依座位排列），寫入資料庫用；省略則只記勝負 */
+  placements?(state: State, outcome: MatchOutcome): number[] | null;
   /** 認輸或斷線時的結果；省略時兩人遊戲由對手獲勝 */
   forfeit?(state: State, seat: SeatIndex, reason: PlatformWinReason): MatchOutcome;
 }

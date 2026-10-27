@@ -53,8 +53,8 @@ describe('persistence rows', () => {
       started_at: '2026-10-27T00:00:00.000Z',
     });
     expect(rows.players).toEqual([
-      { seat: 0, display_name: 'P0', seat_label: 'red', result: 'loss' },
-      { seat: 1, display_name: 'P1', seat_label: 'black', result: 'win' },
+      { seat: 0, display_name: 'P0', seat_label: 'red', placement: null, result: 'loss' },
+      { seat: 1, display_name: 'P1', seat_label: 'black', placement: null, result: 'win' },
     ]);
     expect(rows.actions[0]).toMatchObject({ seq: 1, seat: 0, think_ms: 800, notation: '翻' });
   });

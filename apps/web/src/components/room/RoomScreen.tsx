@@ -1,24 +1,28 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Home, RefreshCw } from 'lucide-react';
 import type { TimeControlId } from '@xiangqi-arena/game-protocol';
-import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import { Lobby } from './Lobby';
 import { GameScreen } from '../game/GameScreen';
+import { BigTwoScreen } from '../bigtwo/BigTwoScreen';
 import { Button } from '../ui/button';
 import { Logo } from '../Logo';
 import { useOnline } from '@/lib/net/online';
+import { toBigTwoSnapshot } from '@/lib/bigTwo';
+import { toXiangqiSnapshot } from '@/lib/xiangqi';
 
 interface Props {
   code: string;
-  createMode?: XiangqiMode;
+  /** 建立新房間（code = NEW）時的遊戲與模式 */
+  createGame?: string;
+  createMode?: string;
   createTimeControl?: TimeControlId;
 }
 
 /** 線上房間：依階段顯示大廳或對戰畫面，並負責建立 / 加入 / 重連 */
-export function RoomScreen({ code, createMode, createTimeControl }: Props) {
+export function RoomScreen({ code, createGame, createMode, createTimeControl }: Props) {
   const router = useRouter();
   const {
     status,
@@ -38,13 +42,27 @@ export function RoomScreen({ code, createMode, createTimeControl }: Props) {
     if (started.current) return;
     started.current = true;
     if (code === 'NEW') {
-      void createRoom(createMode ?? 'classic', createTimeControl).then((id) => {
+      const gameId = createGame ?? 'xiangqi';
+      const mode = createMode ?? (gameId === 'xiangqi' ? 'classic' : 'standard');
+      void createRoom(gameId, mode, createTimeControl).then((id) => {
         if (id) router.replace(`/room/${id}`);
       });
     } else if (roomCode !== code || status === 'idle') {
       void joinRoom(code);
     }
-  }, [code, createMode, createTimeControl, createRoom, joinRoom, roomCode, status, router]);
+  }, [
+    code,
+    createGame,
+    createMode,
+    createTimeControl,
+    createRoom,
+    joinRoom,
+    roomCode,
+    status,
+    router,
+  ]);
+  const xiangqi = useMemo(() => (snapshot ? toXiangqiSnapshot(snapshot) : null), [snapshot]);
+  const bigTwo = useMemo(() => (snapshot ? toBigTwoSnapshot(snapshot) : null), [snapshot]);
 
   const exit = async () => {
     await leave();
@@ -88,9 +106,22 @@ export function RoomScreen({ code, createMode, createTimeControl }: Props) {
   if (snapshot.phase === 'lobby' || !snapshot.game) {
     return <Lobby snapshot={snapshot} send={send} onLeave={exit} />;
   }
+  if (bigTwo) {
+    return (
+      <BigTwoScreen
+        snapshot={bigTwo}
+        snapshotAt={snapshotAt}
+        send={send}
+        variant="online"
+        connection={status}
+        onExit={exit}
+      />
+    );
+  }
+  if (!xiangqi) return null;
   return (
     <GameScreen
-      snapshot={snapshot}
+      snapshot={xiangqi}
       snapshotAt={snapshotAt}
       send={send}
       variant="online"
