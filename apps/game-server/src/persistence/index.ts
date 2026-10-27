@@ -17,15 +17,44 @@ export const noopRecorder: MatchRecorder = {
 export const hashToken = (token: string): string =>
   createHash('sha256').update(`xiangqi-arena:${token}`).digest('hex');
 
-/**
- * 目前資料表的 mode 欄位仍是舊的 game_mode enum（'xiangqi' | 'banqi'）。
- * 資料庫改成 game_id + mode 之前，只有象棋能寫入。
- */
-export function legacyDbMode(gameId: string, mode: string): 'xiangqi' | 'banqi' | null {
-  if (gameId !== 'xiangqi') return null;
-  if (mode === 'classic') return 'xiangqi';
-  if (mode === 'banqi') return 'banqi';
-  return null;
+/** 對局資料位於 game_room schema（需在 Supabase Data API 的 Exposed schemas 中開放） */
+export const DB_SCHEMA = 'game_room';
+
+type MatchSummary = ReturnType<FinishedMatchInfo['match']['summary']>;
+
+/** 對局結束時要寫入的三種資料列（不含 id，id 由資料庫產生） */
+export function buildMatchRows(info: FinishedMatchInfo, summary: MatchSummary) {
+  const outcome = summary.outcome;
+  if (!outcome) return null;
+  const match = {
+    room_code: info.roomCode,
+    match_number: info.matchNumber,
+    game_id: summary.gameId,
+    mode: summary.mode,
+    time_control: info.timeControl,
+    status: 'finished',
+    result: outcome.type === 'draw' ? 'draw' : 'win',
+    winner_seat: outcome.type === 'win' ? outcome.winner : null,
+    end_reason: outcome.reason,
+    started_at: new Date(summary.startedAt).toISOString(),
+    ended_at: new Date(summary.endedAt ?? Date.now()).toISOString(),
+    action_count: summary.moves.length,
+  };
+  const players = info.players.map((p, seat) => ({
+    seat,
+    display_name: p.name,
+    seat_label: summary.seatLabels[seat] ?? null,
+    result: outcome.type === 'draw' ? 'draw' : outcome.winner === seat ? 'win' : 'loss',
+  }));
+  const actions = summary.moves.map((m) => ({
+    seq: m.ply,
+    seat: m.seat,
+    action: m.action,
+    notation: m.notation,
+    think_ms: m.thinkMs,
+    played_at: new Date(m.at).toISOString(),
+  }));
+  return { match, players, actions };
 }
 
 /**
@@ -33,9 +62,10 @@ export function legacyDbMode(gameId: string, mode: string): 'xiangqi' | 'banqi' 
  * 絕不可出現在前端或 NEXT_PUBLIC_* 變數中。
  */
 export function createSupabaseRecorder(url: string, serviceRoleKey: string): MatchRecorder {
-  const db: SupabaseClient = createClient(url, serviceRoleKey, {
+  const client: SupabaseClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const db = client.schema(DB_SCHEMA);
 
   async function profileId(token: string, name: string): Promise<string> {
     const { data, error } = await db
@@ -52,60 +82,28 @@ export function createSupabaseRecorder(url: string, serviceRoleKey: string): Mat
 
   return {
     async record(info) {
-      const summary = info.match.summary();
-      if (!summary.outcome) return;
-      const dbMode = legacyDbMode(summary.gameId, summary.mode);
-      if (!dbMode) {
-        logger.warn({ room: info.roomCode, game: summary.gameId }, 'game not recordable yet');
-        return;
-      }
+      const rows = buildMatchRows(info, info.match.summary());
+      if (!rows) return;
       try {
         const ids = await Promise.all(info.players.map((p) => profileId(p.token, p.name)));
-        const outcome = summary.outcome;
-        const { data: session, error } = await db
-          .from('game_sessions')
-          .insert({
-            room_code: info.roomCode,
-            match_number: info.matchNumber,
-            mode: dbMode,
-            time_control: info.timeControl,
-            status: 'finished',
-            result: outcome.type === 'draw' ? 'draw' : 'win',
-            winner_seat: outcome.type === 'win' ? outcome.winner : null,
-            end_reason: outcome.reason,
-            started_at: new Date(summary.startedAt).toISOString(),
-            ended_at: new Date(summary.endedAt ?? Date.now()).toISOString(),
-            ply_count: summary.moves.length,
-          })
+        const { data: match, error } = await db
+          .from('matches')
+          .insert(rows.match)
           .select('id')
           .single();
         if (error) throw error;
-        const sessionId = (session as { id: string }).id;
-        const players = info.players.map((p, seat) => ({
-          session_id: sessionId,
-          seat,
-          profile_id: ids[seat],
-          display_name: p.name,
-          side: summary.seatLabels[seat] ?? null,
-          result: outcome.type === 'draw' ? 'draw' : outcome.winner === seat ? 'win' : 'loss',
-        }));
-        const { error: pErr } = await db.from('game_players').insert(players);
+        const matchId = (match as { id: string }).id;
+        const { error: pErr } = await db
+          .from('match_players')
+          .insert(rows.players.map((p) => ({ ...p, match_id: matchId, profile_id: ids[p.seat] })));
         if (pErr) throw pErr;
-        if (summary.moves.length > 0) {
-          const { error: mErr } = await db.from('game_moves').insert(
-            summary.moves.map((m) => ({
-              session_id: sessionId,
-              ply: m.ply,
-              seat: m.seat,
-              action: m.action,
-              notation: m.notation,
-              think_ms: m.thinkMs,
-              played_at: new Date(m.at).toISOString(),
-            })),
-          );
-          if (mErr) throw mErr;
+        if (rows.actions.length > 0) {
+          const { error: aErr } = await db
+            .from('match_actions')
+            .insert(rows.actions.map((a) => ({ ...a, match_id: matchId })));
+          if (aErr) throw aErr;
         }
-        logger.info({ sessionId, room: info.roomCode }, 'match recorded');
+        logger.info({ matchId, room: info.roomCode }, 'match recorded');
       } catch (e) {
         logger.error(
           { room: info.roomCode, error: String((e as Error)?.message ?? e) },

@@ -15,7 +15,7 @@
          │ 只讀公開統計                                 └─────────┬──────────┘
          ▼                                                       │ Service Role
 ┌─────────────────────────────────────────────────────────────────▼──────────┐
-│ Supabase（PostgreSQL）profiles / game_sessions / game_players / game_moves  │
+│ Supabase（PostgreSQL）schema game_room：profiles / matches / match_players │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -134,12 +134,24 @@ applyBanqiAction(state, seat, action): Result<BanqiState, BanqiActionError>
 
 ## 7. 資料庫
 
-見 `supabase/migrations/`。重點：
+見 `supabase/migrations/`。遊戲室的資料都在 **`game_room` schema**，`public` 不放任何資料表；
+日後其他獨立產品（例如 mistwood）使用自己的 schema，彼此不互相參照。
 
+| 資料表              | 內容                                                                          |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `profiles`          | 玩家（訪客 token 雜湊；日後可連到 Supabase Auth）                             |
+| `matches`           | 一場對局：`game_id` + `mode`（例如 `xiangqi` / `banqi`）、結果、勝方座位      |
+| `match_players`     | 每個座位：`seat`（0–63）、`seat_label`（例如 red / black）、結果、`placement` |
+| `match_actions`     | 動作紀錄（`seq`、`action` JSON、記譜文字），供重播                            |
+| `player_statistics` | 依 (玩家, `game_id`, `mode`) 統計場次與勝負，由觸發器維護                     |
+
+重點：
+
+- `game_room` 必須加進 Supabase Dashboard → Data API → **Exposed schemas**，伺服器才寫得進去。
 - 訪客只存 `sha256('xiangqi-arena:' + token)`，原始 token 僅在瀏覽器 localStorage。
 - 所有資料表啟用 RLS，寫入一律經遊戲伺服器的 Service Role Key。
-- `game_moves` 不開放任何 anon/authenticated policy。
-- `player_statistics` 由 `game_players` 的 after insert 觸發器維護。
+- anon / authenticated 只能讀 `matches`、`match_players`、`player_statistics`；`match_actions` 完全不開放。
+- 新增遊戲不需要改資料表：`game_id`、`mode` 是文字欄位，座位數由遊戲決定。
 
 ## 8. 技術選型評估
 
