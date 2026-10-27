@@ -4,18 +4,17 @@ import { create } from 'zustand';
 import { Client, type Room } from '@colyseus/sdk';
 import {
   AckSchema,
-  ERROR_MESSAGES,
   MSG,
   NoticeSchema,
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
   type ClientIntent,
-  type GameMode,
   type Notice,
-  type RoomSnapshot,
   type TimeControlId,
 } from '@xiangqi-arena/game-protocol';
+import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import type { ConnectionStatus, IntentInput } from '../controller';
+import { GAME_ID, errorMessage, toXiangqiSnapshot, type XiangqiSnapshot } from '../xiangqi';
 import { getPlayerName, getPlayerToken } from '../identity';
 import { toast } from '../toast';
 import { randomId } from '../utils';
@@ -29,9 +28,9 @@ interface OnlineState {
   status: ConnectionStatus;
   error: string | null;
   roomCode: string | null;
-  snapshot: RoomSnapshot | null;
+  snapshot: XiangqiSnapshot | null;
   snapshotAt: number;
-  createRoom: (mode: GameMode, timeControl?: TimeControlId) => Promise<string | null>;
+  createRoom: (mode: XiangqiMode, timeControl?: TimeControlId) => Promise<string | null>;
   joinRoom: (code: string) => Promise<boolean>;
   send: (intent: IntentInput) => void;
   leave: () => Promise<void>;
@@ -59,6 +58,7 @@ function describeJoinError(e: unknown): string {
   const msg = String((e as Error)?.message ?? e);
   if (/ROOM_FULL/.test(msg)) return '房間已滿，或對局已經開始';
   if (/PROTOCOL_MISMATCH/.test(msg)) return '版本不相容，請重新整理頁面';
+  if (/UNKNOWN_GAME/.test(msg)) return '找不到這個遊戲';
   if (/not found|invalid room|ROOM_NOT_FOUND/i.test(msg)) return '找不到這個房間，請確認房間代碼';
   if (/ECONNREFUSED|Failed to fetch|NetworkError|fetch failed|offline/i.test(msg)) {
     return '無法連線到遊戲伺服器';
@@ -77,12 +77,13 @@ export const useOnline = create<OnlineState>((set, get) => {
     }
     r.onMessage(MSG.snapshot, (raw: unknown) => {
       const parsed = RoomSnapshotSchema.safeParse(raw);
-      if (!parsed.success) {
+      const snapshot = parsed.success ? toXiangqiSnapshot(parsed.data) : null;
+      if (!snapshot) {
         console.warn('invalid snapshot', parsed.error);
         return;
       }
       set({
-        snapshot: parsed.data,
+        snapshot,
         snapshotAt: performance.now(),
         status: 'connected',
         error: null,
@@ -92,7 +93,7 @@ export const useOnline = create<OnlineState>((set, get) => {
       const ack = AckSchema.safeParse(raw);
       if (!ack.success || ack.data.ok || !ack.data.error) return;
       if (ack.data.error === 'DUPLICATE') return;
-      toast(ERROR_MESSAGES[ack.data.error], 'error');
+      toast(errorMessage(ack.data.error), 'error');
       if (ack.data.error === 'STALE_VERSION') get().send({ type: 'sync' });
     });
     r.onMessage(MSG.notice, (raw: unknown) => {
@@ -166,7 +167,12 @@ export const useOnline = create<OnlineState>((set, get) => {
     async createRoom(mode, timeControl) {
       if (inflight) await inflight.catch(() => undefined);
       set({ status: 'connecting', error: null, snapshot: null });
-      const p = getClient().create(ROOM_NAME, { ...joinOptions(), mode, timeControl });
+      const p = getClient().create(ROOM_NAME, {
+        ...joinOptions(),
+        gameId: GAME_ID,
+        mode,
+        timeControl,
+      });
       inflight = p;
       try {
         const r = await p;

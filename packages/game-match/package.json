@@ -13,13 +13,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@xiangqi-arena/game-banqi": "workspace:*",
     "@xiangqi-arena/game-core": "workspace:*",
     "@xiangqi-arena/game-protocol": "workspace:*",
-    "@xiangqi-arena/game-xiangqi": "workspace:*",
     "@xiangqi-arena/shared": "workspace:*"
   },
   "devDependencies": {
+    "@xiangqi-arena/game-xiangqi": "workspace:*",
+    "@xiangqi-arena/games-xiangqi": "workspace:*",
     "typescript": "^5.9.3",
     "vitest": "^4.0.5"
   }

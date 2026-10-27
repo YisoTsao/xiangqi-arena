@@ -6,9 +6,9 @@ import { DoorOpen, Gamepad2, LogIn, Monitor, Plus, Settings, Swords } from 'luci
 import {
   DEFAULT_TIME_CONTROL,
   TIME_CONTROL_LABELS,
-  type GameMode,
   type TimeControlId,
 } from '@xiangqi-arena/game-protocol';
+import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import { isRoomCode } from '@xiangqi-arena/shared';
 import { Logo } from '../Logo';
 import { Button } from '../ui/button';
@@ -63,11 +63,11 @@ export function HomeScreen() {
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [code, setCode] = useState('');
-  const [mode, setMode] = useState<GameMode>('xiangqi');
+  const [mode, setMode] = useState<XiangqiMode>('classic');
   const [tc, setTc] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
   const normalized = code.trim().toUpperCase();
 
-  const create = (m: GameMode, t: TimeControlId = DEFAULT_TIME_CONTROL) =>
+  const create = (m: XiangqiMode, t: TimeControlId = DEFAULT_TIME_CONTROL) =>
     router.push(`/room/new?mode=${m}&tc=${t}`);
 
   return (
@@ -88,7 +88,7 @@ export function HomeScreen() {
           <Button
             size="xl"
             variant="primary"
-            onClick={() => create('xiangqi')}
+            onClick={() => create('classic')}
             data-testid="quick-start"
             className="animate-glow"
           >
@@ -122,7 +122,7 @@ export function HomeScreen() {
           subtitle="傳統 9×10 棋盤，亞洲規則判定長將長捉"
           glyph="帥"
           accent="red"
-          onClick={() => create('xiangqi')}
+          onClick={() => create('classic')}
         />
         <ModeCard
           testId="mode-banqi"
@@ -185,11 +185,11 @@ export function HomeScreen() {
         <div className="space-y-4">
           <div className="space-y-2">
             <span className="text-sm text-ink-300">遊戲模式</span>
-            <Segmented<GameMode>
+            <Segmented<XiangqiMode>
               ariaLabel="遊戲模式"
               value={mode}
               options={[
-                { value: 'xiangqi', label: '大盤象棋' },
+                { value: 'classic', label: '大盤象棋' },
                 { value: 'banqi', label: '暗棋' },
               ]}
               onChange={setMode}

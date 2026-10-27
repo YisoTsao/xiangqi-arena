@@ -2,12 +2,8 @@
 
 import { useState } from 'react';
 import { Check, Copy, Crown, LogOut, Play, Wifi, WifiOff } from 'lucide-react';
-import {
-  TIME_CONTROL_LABELS,
-  type GameMode,
-  type RoomSnapshot,
-  type TimeControlId,
-} from '@xiangqi-arena/game-protocol';
+import { TIME_CONTROL_LABELS, type TimeControlId } from '@xiangqi-arena/game-protocol';
+import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import type { Seat } from '@xiangqi-arena/game-core';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -15,11 +11,12 @@ import { Badge } from '../ui/badge';
 import { Segmented } from '../ui/segmented';
 import { Logo } from '../Logo';
 import type { IntentInput } from '@/lib/controller';
+import type { XiangqiSnapshot } from '@/lib/xiangqi';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
-const MODE_INFO: Record<GameMode, { title: string; rules: string[] }> = {
-  xiangqi: {
+const MODE_INFO: Record<XiangqiMode, { title: string; rules: string[] }> = {
+  classic: {
     title: '大盤象棋',
     rules: [
       '9×10 棋盤，紅先黑後',
@@ -44,7 +41,7 @@ export function Lobby({
   send,
   onLeave,
 }: {
-  snapshot: RoomSnapshot;
+  snapshot: XiangqiSnapshot;
   send: (i: IntentInput) => void;
   onLeave: () => void;
 }) {
@@ -145,12 +142,12 @@ export function Lobby({
           {!isHost && <p className="text-xs text-ink-400">由房主選擇模式與時間</p>}
         </CardHeader>
         <CardContent className="space-y-4">
-          <Segmented<GameMode>
+          <Segmented<XiangqiMode>
             ariaLabel="遊戲模式"
             value={snapshot.config.mode}
             disabled={!isHost}
             options={[
-              { value: 'xiangqi', label: '大盤象棋' },
+              { value: 'classic', label: '大盤象棋' },
               { value: 'banqi', label: '暗棋' },
             ]}
             onChange={(mode) =>

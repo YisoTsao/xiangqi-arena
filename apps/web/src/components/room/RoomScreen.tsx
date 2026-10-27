@@ -3,7 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Home, RefreshCw } from 'lucide-react';
-import type { GameMode, TimeControlId } from '@xiangqi-arena/game-protocol';
+import type { TimeControlId } from '@xiangqi-arena/game-protocol';
+import type { XiangqiMode } from '@xiangqi-arena/games-xiangqi';
 import { Lobby } from './Lobby';
 import { GameScreen } from '../game/GameScreen';
 import { Button } from '../ui/button';
@@ -12,7 +13,7 @@ import { useOnline } from '@/lib/net/online';
 
 interface Props {
   code: string;
-  createMode?: GameMode;
+  createMode?: XiangqiMode;
   createTimeControl?: TimeControlId;
 }
 
@@ -37,7 +38,7 @@ export function RoomScreen({ code, createMode, createTimeControl }: Props) {
     if (started.current) return;
     started.current = true;
     if (code === 'NEW') {
-      void createRoom(createMode ?? 'xiangqi', createTimeControl).then((id) => {
+      void createRoom(createMode ?? 'classic', createTimeControl).then((id) => {
         if (id) router.replace(`/room/${id}`);
       });
     } else if (roomCode !== code || status === 'idle') {

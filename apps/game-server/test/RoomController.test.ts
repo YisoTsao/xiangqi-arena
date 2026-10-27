@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { seededRandom } from '@xiangqi-arena/shared';
-import { RoomSnapshotSchema, type Ack, type RoomSnapshot } from '@xiangqi-arena/game-protocol';
-import { RoomController, type FinishedMatchInfo } from '../src/room/RoomController';
+import {
+  PROTOCOL_VERSION,
+  RoomSnapshotSchema,
+  type Ack,
+  type RoomSnapshot,
+} from '@xiangqi-arena/game-protocol';
+import {
+  RoomController,
+  UnknownGameError,
+  type FinishedMatchInfo,
+} from '../src/room/RoomController';
 
 interface Sent {
   clientId: string;
@@ -47,7 +56,7 @@ function setup() {
 }
 
 const join = (ctl: RoomController, clientId: string, token: string, name = '玩家') =>
-  ctl.join(clientId, { protocol: 1, playerToken: token, name });
+  ctl.join(clientId, { protocol: PROTOCOL_VERSION, playerToken: token, name });
 
 function startXiangqi(t: ReturnType<typeof setup>) {
   join(t.ctl, 'ca', tokenA, '阿紅');
@@ -119,7 +128,15 @@ describe('RoomController lobby', () => {
     t.ctl.handleMessage('cb', { type: 'configure', mode: 'banqi', timeControl: 'blitz-5-3' });
     expect(t.lastAck('cb')).toMatchObject({ ok: false, error: 'NOT_HOST' });
     t.ctl.handleMessage('ca', { type: 'configure', mode: 'banqi', timeControl: 'blitz-5-3' });
-    expect(t.lastSnapshot('cb').config).toEqual({ mode: 'banqi', timeControl: 'blitz-5-3' });
+    expect(t.lastSnapshot('cb').config).toEqual({
+      gameId: 'xiangqi',
+      mode: 'banqi',
+      timeControl: 'blitz-5-3',
+    });
+    // 遊戲沒有的模式（含舊名稱 xiangqi）一律拒絕
+    t.ctl.handleMessage('ca', { type: 'configure', mode: 'xiangqi', timeControl: 'unlimited' });
+    expect(t.lastAck('ca')).toMatchObject({ ok: false, error: 'INVALID_CONFIG' });
+    expect(t.lastSnapshot('cb').config.mode).toBe('banqi');
     t.ctl.handleMessage('ca', { type: 'start' });
     expect(t.lastAck('ca')).toMatchObject({ ok: false, error: 'PLAYERS_NOT_READY' });
     t.ctl.handleMessage('ca', { type: 'setReady', ready: true });
@@ -225,7 +242,7 @@ describe('RoomController match flow', () => {
     const t = setup();
     join(t.ctl, 'ca', tokenA);
     join(t.ctl, 'cb', tokenB);
-    t.ctl.handleMessage('ca', { type: 'configure', mode: 'xiangqi', timeControl: 'blitz-5-3' });
+    t.ctl.handleMessage('ca', { type: 'configure', mode: 'classic', timeControl: 'blitz-5-3' });
     t.ctl.handleMessage('ca', { type: 'setReady', ready: true });
     t.ctl.handleMessage('cb', { type: 'setReady', ready: true });
     t.ctl.handleMessage('ca', { type: 'start' });
@@ -279,5 +296,36 @@ describe('RoomController match flow', () => {
     const last = payloads.at(-1)!;
     expect(last).not.toMatch(/"faceUp":false,"side"/);
     expect(last).not.toMatch(/"kind":"(king|pawn|chariot|horse|cannon|advisor|elephant)"/);
+  });
+});
+
+describe('RoomController game binding', () => {
+  const deps = {
+    roomCode: 'XYZ234',
+    now: () => 0,
+    random: seededRandom(1),
+    send: () => undefined,
+  };
+
+  it('defaults to xiangqi and sizes seats from the game', () => {
+    const ctl = new RoomController(deps);
+    expect(ctl.game.id).toBe('xiangqi');
+    expect(ctl.seatCount).toBe(2);
+    const snap = ctl.snapshotFor(null);
+    expect(snap.config).toMatchObject({ gameId: 'xiangqi', mode: 'classic' });
+    expect(snap.seats).toEqual([null, null]);
+  });
+
+  it('rejects unknown games', () => {
+    expect(() => new RoomController({ ...deps, gameId: 'nope' })).toThrow(UnknownGameError);
+  });
+
+  it('ignores an unknown initial mode', () => {
+    const ctl = new RoomController(deps);
+    ctl.configureInitial('chess', 'unlimited');
+    expect(ctl.snapshotFor(null).config).toMatchObject({
+      mode: 'classic',
+      timeControl: 'unlimited',
+    });
   });
 });

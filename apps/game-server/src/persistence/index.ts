@@ -18,6 +18,17 @@ export const hashToken = (token: string): string =>
   createHash('sha256').update(`xiangqi-arena:${token}`).digest('hex');
 
 /**
+ * 目前資料表的 mode 欄位仍是舊的 game_mode enum（'xiangqi' | 'banqi'）。
+ * 資料庫改成 game_id + mode 之前，只有象棋能寫入。
+ */
+export function legacyDbMode(gameId: string, mode: string): 'xiangqi' | 'banqi' | null {
+  if (gameId !== 'xiangqi') return null;
+  if (mode === 'classic') return 'xiangqi';
+  if (mode === 'banqi') return 'banqi';
+  return null;
+}
+
+/**
  * 使用 Service Role Key 寫入對局紀錄。此金鑰只存在遊戲伺服器環境變數，
  * 絕不可出現在前端或 NEXT_PUBLIC_* 變數中。
  */
@@ -43,6 +54,11 @@ export function createSupabaseRecorder(url: string, serviceRoleKey: string): Mat
     async record(info) {
       const summary = info.match.summary();
       if (!summary.outcome) return;
+      const dbMode = legacyDbMode(summary.gameId, summary.mode);
+      if (!dbMode) {
+        logger.warn({ room: info.roomCode, game: summary.gameId }, 'game not recordable yet');
+        return;
+      }
       try {
         const ids = await Promise.all(info.players.map((p) => profileId(p.token, p.name)));
         const outcome = summary.outcome;
@@ -51,7 +67,7 @@ export function createSupabaseRecorder(url: string, serviceRoleKey: string): Mat
           .insert({
             room_code: info.roomCode,
             match_number: info.matchNumber,
-            mode: summary.mode,
+            mode: dbMode,
             time_control: info.timeControl,
             status: 'finished',
             result: outcome.type === 'draw' ? 'draw' : 'win',
@@ -65,12 +81,12 @@ export function createSupabaseRecorder(url: string, serviceRoleKey: string): Mat
           .single();
         if (error) throw error;
         const sessionId = (session as { id: string }).id;
-        const players = ([0, 1] as const).map((seat) => ({
+        const players = info.players.map((p, seat) => ({
           session_id: sessionId,
           seat,
           profile_id: ids[seat],
-          display_name: info.players[seat].name,
-          side: summary.seatSides[seat],
+          display_name: p.name,
+          side: summary.seatLabels[seat] ?? null,
           result: outcome.type === 'draw' ? 'draw' : outcome.winner === seat ? 'win' : 'loss',
         }));
         const { error: pErr } = await db.from('game_players').insert(players);

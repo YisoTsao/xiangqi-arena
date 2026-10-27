@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { opposite, otherSeat, type Seat } from '@xiangqi-arena/game-core';
-import type { RoomSnapshot } from '@xiangqi-arena/game-protocol';
 import {
   Flag,
   Handshake,
@@ -26,12 +25,13 @@ import { Logo } from '../Logo';
 import { SettingsDialog } from '../SettingsDialog';
 import type { ConnectionStatus, IntentInput } from '@/lib/controller';
 import { handleSquareClick, toBoardModel } from '@/lib/interaction';
+import type { XiangqiSnapshot } from '@/lib/xiangqi';
 import { useSettings } from '@/lib/settings';
 import { playSound } from '@/lib/sound';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  snapshot: RoomSnapshot;
+  snapshot: XiangqiSnapshot;
   snapshotAt: number;
   send: (intent: IntentInput) => void;
   variant: 'online' | 'local';
@@ -42,7 +42,9 @@ interface Props {
 export function GameScreen({ snapshot, snapshotAt, send, variant, connection, onExit }: Props) {
   const game = snapshot.game!;
   const local = variant === 'local';
-  const you = snapshot.yourSeat;
+  // 象棋固定兩個座位
+  const you = snapshot.yourSeat as Seat | null;
+  const turnSeat = game.turnSeat as Seat | null;
   const { sound, setSound } = useSettings();
   const [selected, setSelected] = useState<number | null>(null);
   const [hideEnd, setHideEnd] = useState(false);
@@ -56,14 +58,14 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
 
   // 下方固定為「我」；本機模式下方固定為紅方 / 玩家一
   const bottomSeat: Seat = local
-    ? game.mode === 'xiangqi'
+    ? game.mode === 'classic'
       ? game.seatSides[0] === 'red'
         ? 0
         : 1
       : 0
     : (you ?? 0);
   const topSeat = otherSeat(bottomSeat);
-  const flipped = game.mode === 'xiangqi' && game.seatSides[bottomSeat] === 'black';
+  const flipped = game.mode === 'classic' && game.seatSides[bottomSeat] === 'black';
   const myTurn = you !== null && game.turnSeat === you && !game.outcome;
   const interactive = myTurn && (local || connection === 'connected');
 
@@ -115,10 +117,10 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
     const c = snapshot.clock;
     if (!c) return null;
     const elapsed = c.running === seat ? now - snapshotAt : 0;
-    return Math.max(0, c.remainingMs[seat] - elapsed);
+    return Math.max(0, (c.remainingMs[seat] ?? 0) - elapsed);
   };
   const abandonOf = (seat: Seat): number | null => {
-    const d = snapshot.abandonDeadlineMs[seat];
+    const d = snapshot.abandonDeadlineMs[seat] ?? null;
     return d === null ? null : Math.max(0, d - (now - snapshotAt));
   };
   const capturedBy = (seat: Seat) => {
@@ -132,7 +134,7 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
     const cap = capturedBy(seat);
     return (
       <PlayerPanel
-        seat={snapshot.seats[seat]}
+        seat={snapshot.seats[seat] ?? null}
         side={game.seatSides[seat]}
         isTurn={game.turnSeat === seat}
         isYou={!local && seat === you}
@@ -159,7 +161,7 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
   const status = game.outcome
     ? '對局結束'
     : local
-      ? `${sideName(game.turnSeat)}走棋${game.mode === 'banqi' && !game.seatSides[0] ? '（翻棋決定陣營）' : ''}`
+      ? `${sideName(turnSeat)}走棋${game.mode === 'banqi' && !game.seatSides[0] ? '（翻棋決定陣營）' : ''}`
       : myTurn
         ? '輪到你了'
         : '對手思考中…';
@@ -316,7 +318,7 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
       <aside className="hidden min-h-0 flex-col gap-3 border-l border-ink-800 bg-ink-900/50 p-4 lg:flex">
         <div className="rounded-2xl border border-ink-700/70 bg-ink-900/80 p-4">
           <div className="text-xs tracking-widest text-ink-400">
-            {game.mode === 'xiangqi' ? '大盤象棋' : '暗棋'}
+            {game.mode === 'classic' ? '大盤象棋' : '暗棋'}
           </div>
           <div className="mt-1 font-serif text-lg">{status}</div>
           <div className="mt-2 text-xs text-ink-400">
@@ -378,9 +380,9 @@ export function GameScreen({ snapshot, snapshotAt, send, variant, connection, on
         <EndDialog
           outcome={game.outcome}
           yourSeat={local ? null : you}
-          winnerName={game.outcome.type === 'win' ? sideName(game.outcome.winner) : null}
+          winnerName={game.outcome.type === 'win' ? sideName(game.outcome.winner as Seat) : null}
           rematchVotes={snapshot.rematchVotes}
-          canRematch={local || (snapshot.seats[0] !== null && snapshot.seats[1] !== null)}
+          canRematch={local || snapshot.seats.every((s) => s !== null)}
           onRematch={() => send({ type: 'rematch' })}
           onViewBoard={() => setHideEnd(true)}
           onExit={onExit}

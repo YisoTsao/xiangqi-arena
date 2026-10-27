@@ -37,12 +37,15 @@ apps/web            Next.js 16 前端（App Router、React 19、Tailwind 4）
 apps/game-server    Colyseus 0.18 遊戲伺服器（Node 22）
 packages/
   shared            Result、亂數、洗牌、房間代碼
-  game-core         陣營、座位、棋子、勝負原因、棋鐘
+  game-core         平台契約 GameDefinition、座位、勝負、棋鐘
   game-xiangqi      象棋規則引擎
   game-banqi        暗棋規則引擎（可配置 RuleSet）
-  game-protocol     連線協定（TypeScript 型別 + zod 驗證）
-  game-match        對局狀態機（版本、計時、和棋、視角過濾）
+  game-protocol     遊戲無關的連線協定（TypeScript 型別 + zod 驗證）
+  game-match        泛型對局狀態機（版本、計時、和棋、認輸）
   game-renderer     棋盤呈現（2.5D R3F + 2D SVG）
+games/
+  xiangqi           象棋遊戲定義（大盤象棋、暗棋兩種模式）
+  registry          遊戲註冊表
 supabase/           資料結構與 RLS
 docs/               文件
 ```

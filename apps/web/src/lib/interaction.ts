@@ -1,15 +1,16 @@
-import type { GameAction, GameView } from '@xiangqi-arena/game-protocol';
-import type { Seat } from '@xiangqi-arena/game-core';
+import type { XiangqiAction, XiangqiMatchView } from '@xiangqi-arena/games-xiangqi';
 import type { BoardModel, BoardTarget, RenderPiece } from '@xiangqi-arena/game-renderer';
 
 export interface ClickResult {
   selected: number | null;
-  action: GameAction | null;
+  action: XiangqiAction | null;
 }
+
+type GameView = XiangqiMatchView;
 
 const movesFrom = (view: GameView, from: number) =>
   view.legalActions.filter(
-    (a): a is Extract<GameAction, { kind: 'move' }> => a.kind === 'move' && a.from === from,
+    (a): a is Extract<XiangqiAction, { kind: 'move' }> => a.kind === 'move' && a.from === from,
   );
 
 /**
@@ -18,7 +19,7 @@ const movesFrom = (view: GameView, from: number) =>
  */
 export function handleSquareClick(
   view: GameView,
-  yourSeat: Seat | null,
+  yourSeat: number | null,
   selected: number | null,
   square: number,
 ): ClickResult {
@@ -57,7 +58,7 @@ export function toBoardModel(
           capture: view.board[m.to] != null,
         }));
   return {
-    layout: view.mode,
+    layout: view.mode === 'classic' ? 'xiangqi' : 'banqi',
     pieces,
     selected: options.selected,
     targets,

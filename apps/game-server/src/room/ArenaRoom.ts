@@ -7,7 +7,12 @@ import {
   type JoinOptions,
 } from '@xiangqi-arena/game-protocol';
 import { generateRoomCode } from '@xiangqi-arena/shared';
-import { RoomController, type FinishedMatchInfo, type RoomTimings } from './RoomController';
+import {
+  RoomController,
+  UnknownGameError,
+  type FinishedMatchInfo,
+  type RoomTimings,
+} from './RoomController';
 import { logger } from '../logger';
 
 export interface ArenaRoomDeps {
@@ -24,7 +29,6 @@ export const arenaRoomDeps: ArenaRoomDeps = {};
 const secureRandom = (max: number): number => randomInt(max);
 
 export class ArenaRoom extends Room {
-  override maxClients = 4;
   override autoDispose = false;
   private controller!: RoomController;
   private idleSince: number | null = null;
@@ -32,16 +36,26 @@ export class ArenaRoom extends Room {
   override async onCreate(options: unknown): Promise<void> {
     this.roomId = await this.uniqueCode();
     const parsed = JoinOptionsSchema.partial().safeParse(options);
-    this.controller = new RoomController({
-      roomCode: this.roomId,
-      now: () => Date.now(),
-      random: secureRandom,
-      send: (clientId, channel, payload) => {
-        this.clients.getById(clientId)?.send(channel, payload);
-      },
-      onMatchFinished: arenaRoomDeps.onMatchFinished,
-      timings: arenaRoomDeps.timings,
-    });
+    let controller: RoomController;
+    try {
+      controller = new RoomController({
+        roomCode: this.roomId,
+        gameId: parsed.success ? parsed.data.gameId : undefined,
+        now: () => Date.now(),
+        random: secureRandom,
+        send: (clientId, channel, payload) => {
+          this.clients.getById(clientId)?.send(channel, payload);
+        },
+        onMatchFinished: arenaRoomDeps.onMatchFinished,
+        timings: arenaRoomDeps.timings,
+      });
+    } catch (e) {
+      if (e instanceof UnknownGameError) throw new ServerError(400, 'UNKNOWN_GAME');
+      throw e;
+    }
+    this.controller = controller;
+    // 座位數 + 同一玩家換分頁重連時的暫時重疊
+    this.maxClients = controller.seatCount * 2;
     if (parsed.success) this.controller.configureInitial(parsed.data.mode, parsed.data.timeControl);
 
     this.onMessage(MSG.intent, (client, message) => {

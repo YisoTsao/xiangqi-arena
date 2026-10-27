@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     '@xiangqi-arena/game-xiangqi',
     '@xiangqi-arena/game-banqi',
     '@xiangqi-arena/shared',
+    '@xiangqi-arena/games-xiangqi',
   ],
   poweredByHeader: false,
 };

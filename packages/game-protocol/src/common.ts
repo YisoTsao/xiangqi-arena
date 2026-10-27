@@ -1,20 +1,14 @@
 import { z } from 'zod';
 
-export const PROTOCOL_VERSION = 1;
+/** v2：遊戲無關的協定。動作與畫面內容由各遊戲自己定義與驗證 */
+export const PROTOCOL_VERSION = 2;
 
-export const SeatSchema = z.union([z.literal(0), z.literal(1)]);
-export const SideSchema = z.enum(['red', 'black']);
-export const PieceKindSchema = z.enum([
-  'king',
-  'advisor',
-  'elephant',
-  'chariot',
-  'horse',
-  'cannon',
-  'pawn',
-]);
-export const GameModeSchema = z.enum(['xiangqi', 'banqi']);
-export type GameMode = z.infer<typeof GameModeSchema>;
+/** 座位編號；實際上限由遊戲的 players.max 決定 */
+export const SeatSchema = z.number().int().min(0).max(7);
+export const MAX_SEATS = 8;
+
+export const GameIdSchema = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/);
+export const ModeIdSchema = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/);
 
 export const TimeControlIdSchema = z.enum([
   'unlimited',
@@ -41,79 +35,35 @@ export const TIME_CONTROL_LABELS: Record<TimeControlId, string> = {
 };
 export const DEFAULT_TIME_CONTROL: TimeControlId = 'rapid-10-5';
 
-export const SquareSchema = z.number().int().min(0).max(89);
+/** 結束原因：平台的原因（認輸、超時…）或遊戲自訂的原因字串 */
+export const ReasonSchema = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/);
 
-export const WinReasonSchema = z.enum([
-  'checkmate',
-  'stalemate',
-  'perpetual-check',
-  'perpetual-chase',
-  'no-pieces',
-  'no-moves',
-  'resign',
-  'timeout',
-  'abandon',
-]);
-export const DrawReasonSchema = z.enum([
-  'agreement',
-  'repetition',
-  'mutual-perpetual',
-  'move-limit',
-  'insufficient-material',
-]);
-
-export const ErrorCodeSchema = z.enum([
-  'INVALID_MESSAGE',
-  'RATE_LIMITED',
-  'NOT_SEATED',
-  'NOT_HOST',
-  'NOT_IN_LOBBY',
-  'PLAYERS_NOT_READY',
-  'GAME_NOT_ACTIVE',
-  'NOT_YOUR_TURN',
-  'NOT_YOUR_PIECE',
-  'STALE_VERSION',
-  'DUPLICATE',
-  'ILLEGAL_ACTION',
-  'CANNOT_FLIP',
-  'NO_DRAW_OFFER',
-  'DRAW_OFFER_LIMIT',
-]);
+/** 錯誤碼：平台的錯誤碼或遊戲自訂的錯誤碼 */
+export const ErrorCodeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,39}$/);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 
-export const ERROR_MESSAGES: Record<ErrorCode, string> = {
+export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_MESSAGE: '訊息格式錯誤',
   RATE_LIMITED: '操作太頻繁，請稍候',
   NOT_SEATED: '你不是此房間的玩家',
   NOT_HOST: '只有房主可以這麼做',
   NOT_IN_LOBBY: '對局進行中無法變更設定',
-  PLAYERS_NOT_READY: '雙方都準備好才能開始',
+  PLAYERS_NOT_READY: '玩家都準備好才能開始',
+  INVALID_CONFIG: '這個遊戲沒有這種模式',
   GAME_NOT_ACTIVE: '對局尚未開始或已結束',
   NOT_YOUR_TURN: '還沒輪到你',
-  NOT_YOUR_PIECE: '不能操作對方的棋子',
   STALE_VERSION: '棋局已更新，請重新操作',
   DUPLICATE: '重複的操作已忽略',
-  ILLEGAL_ACTION: '不合法的走法',
-  CANNOT_FLIP: '這顆棋子不能翻',
+  ILLEGAL_ACTION: '不合法的操作',
+  NOT_SUPPORTED: '這個遊戲不支援這個操作',
   NO_DRAW_OFFER: '目前沒有和棋提議',
   DRAW_OFFER_LIMIT: '每一步只能提議和棋一次',
 };
 
-export const WIN_REASON_LABELS: Record<z.infer<typeof WinReasonSchema>, string> = {
-  checkmate: '將死',
-  stalemate: '困斃（無子可動）',
-  'perpetual-check': '長將違規',
-  'perpetual-chase': '長捉違規',
-  'no-pieces': '棋子全被吃光',
-  'no-moves': '無棋可走',
+/** 平台產生的結束原因 */
+export const PLATFORM_REASON_LABELS: Record<string, string> = {
   resign: '認輸',
   timeout: '超時',
   abandon: '斷線逾時',
-};
-export const DRAW_REASON_LABELS: Record<z.infer<typeof DrawReasonSchema>, string> = {
   agreement: '雙方同意和棋',
-  repetition: '重複局面',
-  'mutual-perpetual': '雙方皆長將／長捉',
-  'move-limit': '達到無進展步數上限',
-  'insufficient-material': '雙方皆無攻擊子力',
 };

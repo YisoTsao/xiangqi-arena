@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, type Room } from '@colyseus/sdk';
-import { RoomSnapshotSchema, type Ack, type RoomSnapshot } from '@xiangqi-arena/game-protocol';
+import {
+  PROTOCOL_VERSION,
+  RoomSnapshotSchema,
+  type Ack,
+  type RoomSnapshot,
+} from '@xiangqi-arena/game-protocol';
 import { createGameServer, ROOM_NAME } from '../src/server';
 
 const PORT = 3900 + Math.floor(Math.random() * 500);
@@ -16,7 +21,11 @@ afterAll(async () => {
   await server.gracefullyShutdown(false);
 });
 
-const opts = (token: string, name: string) => ({ protocol: 1, playerToken: token, name });
+const opts = (token: string, name: string) => ({
+  protocol: PROTOCOL_VERSION,
+  playerToken: token,
+  name,
+});
 
 /** 收集房間訊息，並可等待符合條件的快照 */
 function track(room: Room) {
@@ -63,7 +72,8 @@ describe('game server (integration)', () => {
 
     const roomA = await a.create(ROOM_NAME, {
       ...opts('alice-token-000000001', 'Alice'),
-      mode: 'xiangqi',
+      gameId: 'xiangqi',
+      mode: 'classic',
     });
     const ta = track(roomA);
     expect(roomA.roomId).toMatch(/^[23456789A-Z]{6}$/);
@@ -76,6 +86,10 @@ describe('game server (integration)', () => {
     await expect(c.joinById(roomA.roomId, opts('carol-token-000000003', 'Carol'))).rejects.toThrow(
       /ROOM_FULL/,
     );
+    // 不存在的遊戲
+    await expect(
+      c.create(ROOM_NAME, { ...opts('carol-token-000000003', 'Carol'), gameId: 'nope' }),
+    ).rejects.toThrow(/UNKNOWN_GAME/);
     // 錯誤的加入參數
     await expect(
       c.joinById(roomA.roomId, { protocol: 1, playerToken: 'x', name: 'C' }),
@@ -86,7 +100,7 @@ describe('game server (integration)', () => {
     await ta.waitFor((s) => s.seats[0]?.ready === true && s.seats[1]?.ready === true);
     roomA.send('intent', { type: 'start' });
     const started = await tb.waitFor((s) => s.phase === 'playing');
-    expect(started.game?.mode).toBe('xiangqi');
+    expect(started.game).toMatchObject({ gameId: 'xiangqi', mode: 'classic' });
 
     const redIsA = started.game!.turnSeat === 0;
     const [mover, waiter, tMover, tWaiter] = redIsA

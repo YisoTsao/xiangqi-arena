@@ -3,13 +3,16 @@
 import { create } from 'zustand';
 import { otherSeat, type Seat } from '@xiangqi-arena/game-core';
 import { Match } from '@xiangqi-arena/game-match';
+import { TIME_CONTROLS, type TimeControlId } from '@xiangqi-arena/game-protocol';
 import {
-  TIME_CONTROLS,
-  type GameMode,
-  type RoomSnapshot,
-  type TimeControlId,
-} from '@xiangqi-arena/game-protocol';
+  xiangqiGame,
+  type XiangqiAction,
+  type XiangqiGameState,
+  type XiangqiMode,
+  type XiangqiView,
+} from '@xiangqi-arena/games-xiangqi';
 import type { IntentInput } from '../controller';
+import { GAME_ID, type XiangqiSnapshot } from '../xiangqi';
 import { cryptoRandomInt, randomId } from '../utils';
 import { toast } from '../toast';
 
@@ -18,16 +21,17 @@ import { toast } from '../toast';
  * 不需要伺服器，適合練習與離線展示。不用於線上對戰。
  */
 interface LocalState {
-  snapshot: RoomSnapshot | null;
+  snapshot: XiangqiSnapshot | null;
   snapshotAt: number;
-  start: (mode: GameMode, timeControl: TimeControlId) => void;
+  start: (mode: XiangqiMode, timeControl: TimeControlId) => void;
   send: (intent: IntentInput) => void;
   stop: () => void;
 }
 
-let match: Match | null = null;
-let config: { mode: GameMode; timeControl: TimeControlId } = {
-  mode: 'xiangqi',
+let match: Match<XiangqiGameState, XiangqiAction, XiangqiView, XiangqiMode> | null = null;
+let config: { gameId: string; mode: XiangqiMode; timeControl: TimeControlId } = {
+  gameId: GAME_ID,
+  mode: 'classic',
   timeControl: 'unlimited',
 };
 let matchNumber = 0;
@@ -35,11 +39,11 @@ let firstSeat: Seat = 0;
 let ticker: ReturnType<typeof setInterval> | null = null;
 let rematchVotes: [boolean, boolean] = [false, false];
 
-function snapshot(): RoomSnapshot | null {
+function snapshot(): XiangqiSnapshot | null {
   if (!match) return null;
   const turn = match.turnSeat;
   // 輪到誰就以誰的視角呈現；結束後保留最後走棋方
-  const viewer: Seat = turn ?? match.view(null).lastAction?.seat ?? 0;
+  const viewer: Seat = (turn as Seat | null) ?? match.view(null).lastAction?.seat ?? 0;
   return {
     roomCode: 'LOCAL',
     roomVersion: match.version,
@@ -64,7 +68,7 @@ export const useLocalGame = create<LocalState>((set, get) => {
   const refresh = () => set({ snapshot: snapshot(), snapshotAt: performance.now() });
   const newMatch = () => {
     const tc = TIME_CONTROLS[config.timeControl];
-    match = new Match({
+    match = new Match(xiangqiGame, {
       mode: config.mode,
       timeControl: tc ? { initialMs: tc.initialMs, incrementMs: tc.incrementMs } : null,
       random: cryptoRandomInt,
@@ -80,7 +84,7 @@ export const useLocalGame = create<LocalState>((set, get) => {
     snapshot: null,
     snapshotAt: 0,
     start(mode, timeControl) {
-      config = { mode, timeControl };
+      config = { gameId: GAME_ID, mode, timeControl };
       firstSeat = 0;
       matchNumber = 0;
       newMatch();
@@ -93,7 +97,7 @@ export const useLocalGame = create<LocalState>((set, get) => {
     send(intent) {
       if (!match) return;
       const now = Date.now();
-      const seat = match.turnSeat ?? 0;
+      const seat = (match.turnSeat as Seat | null) ?? 0;
       switch (intent.type) {
         case 'action': {
           const r = match.submitAction(

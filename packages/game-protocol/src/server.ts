@@ -1,72 +1,36 @@
 import { z } from 'zod';
 import {
-  DrawReasonSchema,
   ErrorCodeSchema,
-  GameModeSchema,
-  PieceKindSchema,
+  GameIdSchema,
+  MAX_SEATS,
+  ModeIdSchema,
+  ReasonSchema,
   SeatSchema,
-  SideSchema,
-  SquareSchema,
   TimeControlIdSchema,
-  WinReasonSchema,
 } from './common';
-import { GameActionSchema } from './client';
-
-const PieceRefSchema = z.object({ side: SideSchema, kind: PieceKindSchema });
-
-/** 棋盤格：null = 空；faceUp=false 時「不含」身分資訊 */
-export const CellViewSchema = z.union([
-  z.null(),
-  z.object({ id: z.string(), faceUp: z.literal(false) }).strict(),
-  z
-    .object({ id: z.string(), faceUp: z.literal(true), side: SideSchema, kind: PieceKindSchema })
-    .strict(),
-]);
-export type CellView = z.infer<typeof CellViewSchema>;
-
-export const LastActionSchema = z.object({
-  ply: z.number().int(),
-  seat: SeatSchema,
-  kind: z.enum(['move', 'flip']),
-  from: SquareSchema.nullable(),
-  to: SquareSchema,
-  pieceId: z.string(),
-  captured: PieceRefSchema.nullable(),
-  revealed: PieceRefSchema.nullable(),
-});
-export type LastAction = z.infer<typeof LastActionSchema>;
 
 export const OutcomeViewSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('win'), winner: SeatSchema, reason: WinReasonSchema }),
-  z.object({ type: z.literal('draw'), reason: DrawReasonSchema }),
+  z.object({ type: z.literal('win'), winner: SeatSchema, reason: ReasonSchema }),
+  z.object({ type: z.literal('draw'), reason: ReasonSchema }),
 ]);
 export type OutcomeView = z.infer<typeof OutcomeViewSchema>;
 
-export const MoveListEntrySchema = z.object({
-  ply: z.number().int(),
-  seat: SeatSchema,
-  side: SideSchema.nullable(),
-  notation: z.string().max(32),
-});
-export type MoveListEntry = z.infer<typeof MoveListEntrySchema>;
-
-export const GameViewSchema = z.object({
-  mode: GameModeSchema,
-  /** 棋局版本：每次成功操作 +1，客戶端送出行動時需附上 */
+/**
+ * 對局畫面中平台負責的欄位。遊戲自己的欄位（棋盤、手牌…）會合併在同一個物件，
+ * 協定層原樣放行，由前端的遊戲模組用自己的 schema 驗證。
+ */
+export const MatchViewBaseSchema = z.looseObject({
+  gameId: GameIdSchema,
+  mode: ModeIdSchema,
+  /** 對局版本：每次成功操作 +1，客戶端送出行動時需附上 */
   version: z.number().int().min(0),
+  /** 現在可以行動的座位 */
+  activeSeats: z.array(SeatSchema).max(MAX_SEATS),
+  /** 只有一個座位可行動時的那個座位 */
   turnSeat: SeatSchema.nullable(),
-  seatSides: z.tuple([SideSchema.nullable(), SideSchema.nullable()]),
-  board: z.array(CellViewSchema).max(90),
-  /** 只在輪到觀看者時提供，作為落點提示；最終合法性仍由伺服器判定 */
-  legalActions: z.array(GameActionSchema).max(300),
-  lastAction: LastActionSchema.nullable(),
-  checkSquare: SquareSchema.nullable(),
-  moveList: z.array(MoveListEntrySchema).max(2000),
-  captured: z.object({ red: z.array(PieceKindSchema), black: z.array(PieceKindSchema) }),
   outcome: OutcomeViewSchema.nullable(),
-  progress: z.object({ plySinceProgress: z.number().int(), limit: z.number().int() }),
 });
-export type GameView = z.infer<typeof GameViewSchema>;
+export type MatchViewBase = z.infer<typeof MatchViewBaseSchema>;
 
 export const SeatViewSchema = z.object({
   name: z.string(),
@@ -76,7 +40,7 @@ export const SeatViewSchema = z.object({
 export type SeatView = z.infer<typeof SeatViewSchema>;
 
 export const ClockViewSchema = z.object({
-  remainingMs: z.tuple([z.number(), z.number()]),
+  remainingMs: z.array(z.number()).max(MAX_SEATS),
   running: SeatSchema.nullable(),
   incrementMs: z.number(),
 });
@@ -88,15 +52,16 @@ export const RoomSnapshotSchema = z.object({
   phase: z.enum(['lobby', 'playing', 'ended']),
   hostSeat: SeatSchema,
   yourSeat: SeatSchema.nullable(),
-  seats: z.tuple([SeatViewSchema.nullable(), SeatViewSchema.nullable()]),
-  config: z.object({ mode: GameModeSchema, timeControl: TimeControlIdSchema }),
+  /** 長度 = 遊戲的 players.max；null = 空位 */
+  seats: z.array(SeatViewSchema.nullable()).max(MAX_SEATS),
+  config: z.object({ gameId: GameIdSchema, mode: ModeIdSchema, timeControl: TimeControlIdSchema }),
   matchNumber: z.number().int(),
   clock: ClockViewSchema.nullable(),
   drawOfferSeat: SeatSchema.nullable(),
-  rematchVotes: z.tuple([z.boolean(), z.boolean()]),
-  game: GameViewSchema.nullable(),
+  rematchVotes: z.array(z.boolean()).max(MAX_SEATS),
+  game: MatchViewBaseSchema.nullable(),
   /** 斷線座位的自動判負期限（伺服器時間戳差值，毫秒） */
-  abandonDeadlineMs: z.tuple([z.number().nullable(), z.number().nullable()]),
+  abandonDeadlineMs: z.array(z.number().nullable()).max(MAX_SEATS),
 });
 export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;
 
