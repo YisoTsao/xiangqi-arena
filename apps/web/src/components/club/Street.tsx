@@ -278,9 +278,9 @@ function ClubFacade({ inside }: { inside: boolean }) {
           <Glow
             size={[b! - a! - 0.2, 2.1, 0.04]}
             position={[(a! + b!) / 2, 1.55, 0.02]}
-            color="#ffb466"
-            base={0.2}
-            strength={0.32}
+            color="#f5a050"
+            base={0.12}
+            strength={0.24}
           />
           {Array.from({ length: 5 }, (_, i) => (
             <Wood

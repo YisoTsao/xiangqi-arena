@@ -363,7 +363,8 @@ function Foyer() {
 
 // ── 牌桌 ───────────────────────────────────────────────
 
-const TILE = { w: 0.028, h: 0.02, d: 0.038 } as const;
+// 比實物略大一點，斜俯視時才看得出牌牆
+const TILE = { w: 0.034, h: 0.024, d: 0.046 } as const;
 const STACKS = 17;
 
 /** 每張桌上四道牌牆（兩層、牌背朝上）：全部桌子共用兩個 InstancedMesh */
@@ -381,7 +382,7 @@ function TileWalls() {
           for (let layer = 0; layer < 2; layer++) {
             const along = (s - (STACKS - 1) / 2) * TILE.w;
             const lx = along;
-            const lz = 0.25;
+            const lz = 0.33;
             o.position.set(
               tx + lx * Math.cos(rot) + lz * Math.sin(rot),
               TABLE_HEIGHT + 0.012 + TILE.h * (layer + 0.5) - 0.004,
@@ -411,7 +412,7 @@ function TileWalls() {
       </instancedMesh>
       <instancedMesh ref={back} args={[undefined, undefined, count]}>
         <boxGeometry args={[TILE.w * 0.96, TILE.h * 0.96, TILE.d * 1.01]} />
-        <meshStandardMaterial color="#2f8a6a" roughness={0.35} />
+        <meshStandardMaterial color="#3aa37c" roughness={0.3} />
       </instancedMesh>
     </group>
   );
@@ -477,7 +478,7 @@ function MahjongTable({
         <Rounded
           size={[2.5, 0.015, 2.5]}
           position={[0, 0.012, 0]}
-          color="#7a2f2a"
+          color="#5e2622"
           radius={0.006}
           roughness={1}
           castShadow={false}
@@ -485,7 +486,7 @@ function MahjongTable({
         <Rounded
           size={[2.2, 0.017, 2.2]}
           position={[0, 0.013, 0]}
-          color="#9c463a"
+          color="#7d3a30"
           radius={0.006}
           roughness={1}
           castShadow={false}
@@ -550,16 +551,16 @@ function MahjongTable({
           <meshStandardMaterial color="#2a2220" />
         </mesh>
         <mesh position-y={2.32} castShadow>
-          <coneGeometry args={[0.34, 0.24, 16, 1, true]} />
+          <coneGeometry args={[0.3, 0.22, 16, 1, true]} />
           <meshStandardMaterial
-            color="#e9c48a"
+            color="#b8743e"
             emissive="#f2b552"
-            emissiveIntensity={0.55}
+            emissiveIntensity={0.22}
             roughness={0.7}
             side={2}
           />
         </mesh>
-        <Wood size={[0.62, 0.03, 0.62]} position={[0, 2.2, 0]} radius={0.012} castShadow={false} />
+        <Wood size={[0.54, 0.03, 0.54]} position={[0, 2.2, 0]} radius={0.012} castShadow={false} />
         <mesh position-y={2.26}>
           <sphereGeometry args={[0.07, 12, 10]} />
           <meshStandardMaterial
@@ -570,7 +571,7 @@ function MahjongTable({
           />
         </mesh>
         <LightPool position={[0, TABLE_HEIGHT + 0.012, 0]} radius={0.62} opacity={0.42} />
-        <LightPool position={[0, 0.03, 0]} radius={1.55} opacity={0.32} />
+        <LightPool position={[0, 0.03, 0]} radius={1.45} opacity={0.2} />
         {/* 桌號木牌 */}
         <Sign
           text={`${number}`}
@@ -724,7 +725,7 @@ function Stairs({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void })
           <Rounded
             size={[s.maxX - s.minX - 0.3, 0.012, depth - 0.06]}
             position={[cx, 0.18 * (i + 1) + 0.006, s.maxZ - depth * (i + 0.5)]}
-            color="#9c463a"
+            color="#7d3a30"
             radius={0.004}
             castShadow={false}
           />
@@ -883,11 +884,11 @@ function Decor() {
         </mesh>
       </group>
       {/* 走道上方的燈籠串 */}
-      <mesh position={[0, 3.2, -6]}>
-        <boxGeometry args={[0.012, 0.012, 10]} />
+      <mesh position={[0, 3.2, -8.4]}>
+        <boxGeometry args={[0.012, 0.012, 6]} />
         <meshStandardMaterial color="#2a2220" />
       </mesh>
-      {[-2.6, -4.6, -6.6, -8.6, -10.6].map((z) => (
+      {[-6.6, -8.6, -10.6].map((z) => (
         <Lantern key={z} position={[0, 2.95, z]} scale={0.6} />
       ))}
       {/* 室內盆栽 */}

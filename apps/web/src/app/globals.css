@@ -1,24 +1,33 @@
 @import 'tailwindcss';
 
-/* 色票對應 docs/ART_BIBLE.md：深色背景 + 溫暖金色點綴 */
+/*
+ * 品牌色票：暮光遊樂館（復古台灣俱樂部，見 docs/CLUB_ART_BIBLE.md）
+ * 夜色藍底 + 米色文字 + 琥珀燈色 + 霓虹紅 + 木色 + 磁磚綠。
+ * 沿用 ink / gold / cinnabar / jade 這組名字，所有畫面（首頁、象棋、大老二、麻將、遊樂館）一起換色。
+ */
 @theme {
-  --color-ink-950: #0d0b0a;
-  --color-ink-900: #141110;
-  --color-ink-850: #1a1614;
-  --color-ink-800: #221d1a;
-  --color-ink-700: #2e2723;
-  --color-ink-600: #3d342e;
-  --color-ink-400: #8b7d70;
-  --color-ink-300: #b3a597;
-  --color-ink-100: #efe6da;
-  --color-gold-300: #f3d38c;
-  --color-gold-400: #e3b55b;
-  --color-gold-500: #c9953b;
-  --color-gold-600: #a2742a;
-  --color-cinnabar-400: #e2574c;
-  --color-cinnabar-500: #c0362c;
-  --color-jade-400: #4f9a7d;
-  --color-jade-500: #2f6b55;
+  --color-ink-950: #0f1420;
+  --color-ink-900: #141a28;
+  --color-ink-850: #19212f;
+  --color-ink-800: #1f2839;
+  --color-ink-700: #2a3549;
+  --color-ink-600: #3a4660;
+  --color-ink-400: #9a958c;
+  --color-ink-300: #c9b99e;
+  --color-ink-100: #f4e4c6;
+  --color-gold-300: #f8d08a;
+  --color-gold-400: #f2b552;
+  --color-gold-500: #d9953a;
+  --color-gold-600: #a8702c;
+  --color-cinnabar-400: #e95b4b;
+  --color-cinnabar-500: #c8432f;
+  --color-jade-400: #5f9a85;
+  --color-jade-500: #4e816f;
+  --color-wood-400: #a0714f;
+  --color-wood-500: #81583e;
+  --color-wood-700: #4a3225;
+  --color-navy-500: #24344d;
+  --color-cream-200: #f2dab6;
   --font-serif:
     'Noto Serif TC', 'Noto Serif CJK TC', 'Source Han Serif TC', 'Songti TC', 'PMingLiU', serif;
   --font-sans:
@@ -42,10 +51,10 @@
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(227 181 91 / 0);
+    box-shadow: 0 0 0 0 rgb(242 181 82 / 0);
   }
   50% {
-    box-shadow: 0 0 24px 2px rgb(227 181 91 / 0.35);
+    box-shadow: 0 0 24px 2px rgb(242 181 82 / 0.4);
   }
 }
 @keyframes rays {
@@ -69,13 +78,13 @@ body {
 body {
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgb(227 181 91 / 0.08), transparent 60%),
-    radial-gradient(800px 500px at 100% 100%, rgb(47 107 85 / 0.08), transparent 60%),
+    radial-gradient(1200px 600px at 50% -10%, rgb(233 91 75 / 0.1), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgb(242 181 82 / 0.08), transparent 60%),
     var(--color-ink-950);
 }
 
 ::selection {
-  background: rgb(227 181 91 / 0.35);
+  background: rgb(242 181 82 / 0.35);
 }
 
 @media (prefers-reduced-motion: reduce) {

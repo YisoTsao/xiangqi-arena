@@ -9,7 +9,7 @@ import { MahjongPracticeScreen } from '../mahjong/MahjongPracticeScreen';
 import { Button } from '../ui/button';
 import { DAY_PHASE_LABELS, dayPhaseOf, formatGameTime, gameHourAt } from './clock';
 import { INTERACTABLES, type Interactable } from './layout';
-import { useClub, walkToNearestTable } from './store';
+import { player, useClub, walkToNearestTable } from './store';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -126,6 +126,12 @@ export function ClubScreen() {
     const q = new URLSearchParams(window.location.search).get('q');
     if (q === 'low' || q === 'medium' || q === 'high') setQualityOverride(q);
     reset();
+    // 網址加 ?spawn=hall 直接站在 1F 室內（截圖檢視用）
+    if (new URLSearchParams(window.location.search).get('spawn') === 'hall') {
+      player.pos = [-0.4, -6.8];
+      player.yaw = Math.PI;
+      useClub.setState({ mode: 'walk', inside: true });
+    }
   }, [reset]);
 
   const act = (it: Interactable | null) => {

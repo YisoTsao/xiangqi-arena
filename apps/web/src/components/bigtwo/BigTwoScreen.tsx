@@ -588,7 +588,7 @@ function Hand({
               card={c}
               size="lg"
               className={cn(
-                isSelected && 'ring-2 ring-gold-400 shadow-[0_8px_20px_-6px_rgb(227_181_91/0.7)]',
+                isSelected && 'ring-2 ring-gold-400 shadow-[0_8px_20px_-6px_rgb(242_181_82/0.7)]',
               )}
             />
           </button>

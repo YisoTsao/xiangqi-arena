@@ -140,7 +140,7 @@ export function MahjongScreen({ view, you, names, send, onExit, title = '麻將�
       <div
         className={cn(
           'flex min-w-0 flex-col gap-2 rounded-2xl border border-ink-700 bg-ink-900/70 p-3',
-          active && 'border-gold-400/70 shadow-[0_0_24px_-8px_rgb(227_181_91/0.6)]',
+          active && 'border-gold-400/70 shadow-[0_0_24px_-8px_rgb(242_181_82/0.6)]',
         )}
         data-testid={`mj-seat-${side}`}
       >
@@ -211,7 +211,7 @@ export function MahjongScreen({ view, you, names, send, onExit, title = '麻將�
 
       <section
         aria-label="牌河"
-        className="grid flex-1 grid-cols-2 gap-3 rounded-3xl border border-ink-700 bg-[radial-gradient(ellipse_at_center,#2b5a47_0%,#1d4034_70%,#163228_100%)] p-3 sm:grid-cols-4"
+        className="grid flex-1 grid-cols-2 gap-3 rounded-3xl border-[6px] border-wood-500 bg-[radial-gradient(ellipse_at_center,#2f6650_0%,#22493a_70%,#1a382d_100%)] shadow-[inset_0_0_0_2px_rgb(0_0_0/0.3),inset_0_0_40px_rgb(242_181_82/0.12),0_20px_50px_-20px_rgb(0_0_0/0.7)] p-3 sm:grid-cols-4"
       >
         {(['left', 'top', 'right', 'bottom'] as Side[]).map((side) => {
           const seat = at(side);
