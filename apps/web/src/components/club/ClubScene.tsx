@@ -189,6 +189,7 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const scene = useThree((s) => s.scene);
   const quality = useQuality();
   const inside = useClub((s) => s.inside);
+  const rain = useClub((s) => s.weather === 'rain');
   const sun = useRef<DirectionalLight>(null);
   const sunDir = useRef(new Vector3(0, 1, 0));
   const hemi = useRef<HemisphereLight>(null);
@@ -199,10 +200,19 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     const apply = () => {
       const l = lightingAt(hour ?? gameHourAt(Date.now()));
       const fog = new Color(...l.fog);
+      const skyTop = new Color(...l.sky);
+      if (rain) {
+        // 雨天：雲層壓低、天色偏灰藍，遠景被雨霧吃掉
+        const grey = new Color(0.32, 0.35, 0.4).lerp(new Color(0.07, 0.08, 0.12), l.neon);
+        fog.lerp(grey, 0.7);
+        skyTop.lerp(grey.clone().multiplyScalar(0.75), 0.75);
+      }
       scene.background = fog;
       // 室內時遠景淡一點，讓暖色牌桌區跳出來
-      scene.fog = new Fog(fog, inside ? 26 : 36, inside ? 70 : 95);
-      setSky({ top: new Color(...l.sky), bottom: fog });
+      scene.fog = rain
+        ? new Fog(fog, inside ? 22 : 18, inside ? 60 : 62)
+        : new Fog(fog, inside ? 26 : 36, inside ? 70 : 95);
+      setSky({ top: skyTop, bottom: fog });
       // 進到室內：屋頂擋住天光（剖面圖拿掉了屋頂，用降低室外光代替），主光換成桌燈
       const dim = inside ? 0.22 : 1;
       if (sun.current) {
@@ -213,12 +223,12 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
           c * Math.sin(l.sunAzimuth),
         );
         sun.current.color.setRGB(...l.sun);
-        sun.current.intensity = l.sunIntensity * dim;
+        sun.current.intensity = l.sunIntensity * dim * (rain ? 0.35 : 1);
       }
       if (hemi.current) {
         hemi.current.color.setRGB(...l.hemiSky);
         hemi.current.groundColor.setRGB(...l.hemiGround);
-        hemi.current.intensity = l.hemiIntensity * (inside ? 0.4 : 0.75);
+        hemi.current.intensity = l.hemiIntensity * (inside ? 0.4 : 0.75) * (rain ? 0.8 : 1);
       }
       setNeon(Math.round(l.neon * 20) / 20);
     };
@@ -226,7 +236,7 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     // CLUB_ART_BIBLE §5.2：每 5 秒更新一次就夠
     const id = setInterval(apply, 5000);
     return () => clearInterval(id);
-  }, [hour, scene, inside]);
+  }, [hour, scene, inside, rain]);
 
   // 陰影相機跟著角色走（以 texel 為單位對齊，移動時陰影邊緣不閃），範圍小一點換取較細的陰影
   useFrame(() => {
@@ -244,7 +254,7 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   return (
     <NeonContext.Provider value={neon}>
       <SkyDome top={sky.top} bottom={sky.bottom} />
-      {neon > 0.4 && quality !== 'low' && (
+      {neon > 0.4 && quality !== 'low' && !rain && (
         <Stars radius={110} depth={10} count={900} factor={3} fade speed={0.4} />
       )}
       <directionalLight

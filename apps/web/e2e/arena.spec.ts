@@ -47,6 +47,29 @@ test('local hot-seat xiangqi: move and resign', async ({ browser }) => {
   await expect(page.getByTestId('end-title')).toContainText('紅方');
 });
 
+test('leaving a room goes straight home even when the server is slow to answer', async ({
+  browser,
+}) => {
+  const page = await newPlayer(browser, 'Dana');
+  // 按離開前開始吞掉玩家送出的 WebSocket 訊息，模擬伺服器遲遲不回應離開請求
+  await page.addInitScript(() => {
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (this: WebSocket, data) {
+      if (!(window as unknown as { __stall?: boolean }).__stall) send.call(this, data);
+    };
+  });
+  await page.goto('/');
+  await page.getByTestId('create-room').click();
+  await page.getByTestId('create-submit').click();
+  await expect(page.getByTestId('room-code')).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { __stall?: boolean }).__stall = true;
+  });
+  await page.getByRole('button', { name: '離開' }).click();
+  await expect(page).toHaveURL(/\/$/, { timeout: 5_000 });
+  await expect(page.getByTestId('quick-start')).toBeVisible();
+});
+
 test('online room: two players, third rejected, move sync, reconnect, resign, rematch', async ({
   browser,
 }) => {

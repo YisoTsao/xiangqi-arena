@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { DoorOpen, Footprints, LogOut, Navigation } from 'lucide-react';
+import { CloudRain, DoorOpen, Footprints, LogOut, Navigation, Sun } from 'lucide-react';
 import { isWebGLAvailable, recommendedQuality } from '@xiangqi-arena/game-renderer';
 import { MahjongPracticeScreen } from '../mahjong/MahjongPracticeScreen';
 import { Button } from '../ui/button';
@@ -62,6 +62,24 @@ function Clock({ hour }: { hour: number | null }) {
   );
 }
 
+/** 晴雨切換：下雨時街面濕亮、倒映霓虹 */
+function WeatherToggle() {
+  const weather = useClub((s) => s.weather);
+  const rain = weather === 'rain';
+  return (
+    <button
+      type="button"
+      data-testid="club-weather"
+      aria-pressed={rain}
+      onClick={() => useClub.getState().setWeather(rain ? 'clear' : 'rain')}
+      className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/15 bg-[#24344D]/75 px-3 py-1 text-xs text-[#F2DAB6] backdrop-blur hover:bg-[#24344D]"
+    >
+      {rain ? <CloudRain className="size-3.5" /> : <Sun className="size-3.5" />}
+      {rain ? '雨天' : '晴天'}
+    </button>
+  );
+}
+
 function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-[#141018]/85 via-[#141018]/20 to-transparent p-6 pb-10 sm:justify-center sm:bg-gradient-to-r sm:p-12">
@@ -73,8 +91,9 @@ function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void
         <p className="mt-3 text-sm leading-relaxed text-[#F2DAB6]/80">
           藏在老街裡、燈從不熄的遊戲俱樂部。1F 麻將館已經開門，找張桌子坐下來吧。
         </p>
-        <div className="mt-3">
+        <div className="mt-3 flex items-center gap-2">
           <Clock hour={hour} />
+          <WeatherToggle />
         </div>
         <div className="mt-6 grid gap-2 sm:w-64">
           <Button variant="primary" size="lg" onClick={onEnter} data-testid="club-enter">
@@ -126,6 +145,9 @@ export function ClubScreen() {
     const q = new URLSearchParams(window.location.search).get('q');
     if (q === 'low' || q === 'medium' || q === 'high') setQualityOverride(q);
     reset();
+    // 網址加 ?weather=clear／rain 可以固定天氣（截圖比對用）
+    const w = new URLSearchParams(window.location.search).get('weather');
+    if (w === 'clear' || w === 'rain') useClub.getState().setWeather(w);
     // 網址加 ?spawn=hall 直接站在 1F 室內（截圖檢視用）
     if (new URLSearchParams(window.location.search).get('spawn') === 'hall') {
       player.pos = [-0.4, -6.8];
@@ -207,6 +229,7 @@ export function ClubScreen() {
                 暮光<span className="text-[#E95B4B]">遊樂館</span>
               </div>
               <Clock hour={hour} />
+              <WeatherToggle />
             </div>
             <Link
               href="/"

@@ -19,6 +19,8 @@ import { Bake } from './Bake';
 import { Lantern, Plant, Rounded, Sign, Wood, useNeon, useQuality } from './props';
 import { CLUB } from './signs';
 import { InteriorWindow } from './InteriorWindow';
+import { LampCone, RainyStreet } from './Rain';
+import { useClub } from './store';
 import { usePbr, type PbrSet } from './pbr';
 import { cityWindows, shutter, tiled } from './textures';
 
@@ -63,38 +65,46 @@ function Curb({ z }: { z: number }) {
   );
 }
 
-function Ground() {
+/**
+ * 地面。晴天用 PBR 貼圖組（騎樓陶磚、柏油、排水溝、標線）；
+ * 雨天時人行道到對街這一帶改由 Rain.tsx 的濕街面接手（同一張平面做倒影），這裡只留遠處地面與立體物。
+ */
+function Ground({ rain }: { rain: boolean }) {
   return (
     <group>
       {/* 騎樓與人行道：20cm 陶磚格紋 */}
-      <Surface set="arcade_tile" size={[120, 3.5]} tile={1.2} position={[0, 0, 1.75]} />
+      {!rain && <Surface set="arcade_tile" size={[120, 3.5]} tile={1.2} position={[0, 0, 1.75]} />}
       {/* 遠處地面與對面人行道 */}
       <Surface set="concrete" size={[160, 120]} tile={3} position={[0, -0.01, 0]} color="#a89a8a" />
-      {/* 馬路：低窪處積水，粗糙度低，夜晚會映出招牌與路燈 */}
-      <Surface
-        set="asphalt"
-        size={[120, 7.2]}
-        tile={4}
-        position={[0, 0.001, 7.1]}
-        envMapIntensity={1.4}
-      />
-      {/* 路邊排水溝 */}
-      {[3.78, 10.42].map((z) => (
-        <Surface
-          key={z}
-          set="concrete"
-          size={[120, 0.32]}
-          tile={1}
-          position={[0, 0.003, z]}
-          color="#7d756c"
-        />
-      ))}
-      {Array.from({ length: 24 }, (_, i) => (
-        <mesh key={i} rotation-x={-Math.PI / 2} position={[-46 + i * 4, 0.006, 7.1]}>
-          <planeGeometry args={[2, 0.14]} />
-          <meshStandardMaterial color="#e2d29e" roughness={0.55} />
-        </mesh>
-      ))}
+      {!rain && (
+        <>
+          {/* 馬路：低窪處積水，粗糙度低，夜晚會映出招牌與路燈 */}
+          <Surface
+            set="asphalt"
+            size={[120, 7.2]}
+            tile={4}
+            position={[0, 0.001, 7.1]}
+            envMapIntensity={1.4}
+          />
+          {/* 路邊排水溝 */}
+          {[3.78, 10.42].map((z) => (
+            <Surface
+              key={z}
+              set="concrete"
+              size={[120, 0.32]}
+              tile={1}
+              position={[0, 0.003, z]}
+              color="#7d756c"
+            />
+          ))}
+          {Array.from({ length: 24 }, (_, i) => (
+            <mesh key={i} rotation-x={-Math.PI / 2} position={[-46 + i * 4, 0.006, 7.1]}>
+              <planeGeometry args={[2, 0.14]} />
+              <meshStandardMaterial color="#e2d29e" roughness={0.55} />
+            </mesh>
+          ))}
+        </>
+      )}
       {/* 斑馬線 */}
       {Array.from({ length: 8 }, (_, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[-13, 0.006, 4.1 + i * 0.85]}>
@@ -713,6 +723,7 @@ function StreetLamp({ x, z }: { x: number; z: number }) {
         <>
           <primitive object={spot} />
           <primitive object={spot.target} />
+          <LampCone position={[0, 3.75, -0.62]} />
         </>
       )}
       <AssetSlot id="PROP_street_lamp">
@@ -1033,37 +1044,41 @@ const SHOP_SLOTS: AssetId[] = [
 /** 街口：馬路、鄰居店面、遠景、路燈、電線、機車、郵筒、販賣機，加上俱樂部外觀 */
 export function Street({ inside }: { inside: boolean }) {
   const quality = useQuality();
+  const rain = useClub((s) => s.weather === 'rain');
   return (
-    <Bake deps={[inside, quality]}>
-      <Ground />
-      <group visible={!inside}>
-        <AssetSlot id="ARCH_club_facade">
-          <ClubFacade inside={inside} />
-        </AssetSlot>
-      </group>
-      {SHOPS.map((s, i) => (
-        <Placed key={s.x0} id={SHOP_SLOTS[i]!} at={[(s.x0 + s.x1) / 2, 0]}>
-          <Shophouse s={s} />
+    <>
+      {rain && <RainyStreet inside={inside} />}
+      <Bake deps={[inside, quality, rain]}>
+        <Ground rain={rain} />
+        <group visible={!inside}>
+          <AssetSlot id="ARCH_club_facade">
+            <ClubFacade inside={inside} />
+          </AssetSlot>
+        </group>
+        {SHOPS.map((s, i) => (
+          <Placed key={s.x0} id={SHOP_SLOTS[i]!} at={[(s.x0 + s.x1) / 2, 0]}>
+            <Shophouse s={s} />
+          </Placed>
+        ))}
+        <Skyline />
+        {STREET_LAMPS.map(([x, z]) => (
+          <StreetLamp key={x} x={x} z={z} />
+        ))}
+        {!inside && <LanternString />}
+        {quality !== 'low' && <PowerLines />}
+        {SCOOTERS.map(([x, z], i) => (
+          <Placed key={x} id="PROP_scooter" at={[x, z]}>
+            <Scooter x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
+          </Placed>
+        ))}
+        <Placed id="PROP_vending_machine" at={center(VENDING)}>
+          <Vending />
         </Placed>
-      ))}
-      <Skyline />
-      {STREET_LAMPS.map(([x, z]) => (
-        <StreetLamp key={x} x={x} z={z} />
-      ))}
-      {!inside && <LanternString />}
-      {quality !== 'low' && <PowerLines />}
-      {SCOOTERS.map(([x, z], i) => (
-        <Placed key={x} id="PROP_scooter" at={[x, z]}>
-          <Scooter x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
+        <Placed id="PROP_mailbox_pair" at={MAILBOX}>
+          <Mailboxes />
         </Placed>
-      ))}
-      <Placed id="PROP_vending_machine" at={center(VENDING)}>
-        <Vending />
-      </Placed>
-      <Placed id="PROP_mailbox_pair" at={MAILBOX}>
-        <Mailboxes />
-      </Placed>
-      <Planters />
-    </Bake>
+        <Planters />
+      </Bake>
+    </>
   );
 }

@@ -3,6 +3,7 @@
 import {
   CanvasTexture,
   DataTexture,
+  LinearMipmapLinearFilter,
   NearestFilter,
   RedFormat,
   RepeatWrapping,
@@ -300,4 +301,223 @@ export function toonGradient(): DataTexture {
   toonRamp.magFilter = NearestFilter;
   toonRamp.needsUpdate = true;
   return toonRamp;
+}
+
+// ── 雨天街面 ───────────────────────────────────────────
+
+/**
+ * 街面一條帶狀貼圖：u 沿著街（每 STREET_U 公尺重複一次），v 從騎樓牆腳（z=0）
+ * 到對街人行道（z=STREET_V）。人行道磚、路面、標線、排水溝都畫在同一張，
+ * 這樣整條街只要一個平面、一次平面反射。
+ */
+export const STREET_U = 8;
+export const STREET_V = 16;
+/** 街面上各區的 z 範圍（公尺） */
+export const STREET_ZONES = {
+  walk: [0, 3.38],
+  road: [3.62, 10.68],
+  farWalk: [10.92, STREET_V],
+  lane: 7.1,
+} as const;
+
+/** 沿 x 週期為 period 的值雜訊（格點雜訊 + 平滑內插），讓貼圖左右接得起來 */
+function periodicNoise(seed: number, period: number) {
+  const rnd = seeded(seed);
+  const rows = 256;
+  const grid = new Float32Array(period * rows).map(() => rnd());
+  const at = (i: number, j: number) =>
+    grid[(((i % period) + period) % period) + (((j % rows) + rows) % rows) * period]!;
+  const fade = (t: number) => t * t * (3 - 2 * t);
+  return (x: number, y: number) => {
+    const i = Math.floor(x);
+    const j = Math.floor(y);
+    const fx = fade(x - i);
+    const fy = fade(y - j);
+    const a = at(i, j) + (at(i + 1, j) - at(i, j)) * fx;
+    const b = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * fx;
+    return a + (b - a) * fy;
+  };
+}
+
+export interface StreetSurface {
+  /** 顏色（sRGB） */
+  map: Texture;
+  /** R：積水程度、G：乾燥時的粗糙度（線性） */
+  wet: Texture;
+  /** 切線空間法線（磚縫、柏油顆粒） */
+  normal: Texture;
+}
+
+let streetCache: StreetSurface | null = null;
+
+export function streetSurface(): StreetSurface | null {
+  if (streetCache) return streetCache;
+  if (typeof document === 'undefined') return null;
+  const W = 1024;
+  const H = 2048;
+  const pxU = W / STREET_U;
+  const pxV = H / STREET_V;
+  const rnd = seeded(41);
+
+  // 1) 顏色：先用 canvas 畫
+  const color = document.createElement('canvas');
+  color.width = W;
+  color.height = H;
+  const ctx = color.getContext('2d');
+  if (!ctx) return null;
+  const zy = (z: number) => z * pxV;
+  const { walk, road, farWalk, lane } = STREET_ZONES;
+
+  // 人行道：台灣常見的紅磚 + 米色磚，0.4 公尺見方，偶爾一塊顏色深淺不同
+  const paveRows = (z0: number, z1: number) => {
+    const s = 0.4;
+    for (let z = z0; z < z1; z += s) {
+      for (let x = 0; x < STREET_U; x += s) {
+        const warm = (Math.round(x / s) + Math.round(z / s)) % 2 === 0;
+        const base = warm ? [176, 112, 88] : [196, 172, 144];
+        const k = 0.86 + rnd() * 0.2;
+        ctx.fillStyle = `rgb(${base.map((c) => Math.round(c * k)).join(',')})`;
+        ctx.fillRect(x * pxU + 2, zy(z) + 2, s * pxU - 4, s * pxV - 4);
+      }
+    }
+  };
+  ctx.fillStyle = '#5c4a40';
+  ctx.fillRect(0, zy(walk[0]), W, zy(walk[1]) - zy(walk[0]));
+  ctx.fillRect(0, zy(farWalk[0]), W, zy(farWalk[1]) - zy(farWalk[0]));
+  paveRows(walk[0], walk[1]);
+  paveRows(farWalk[0], farWalk[1]);
+
+  // 柏油：深灰底 + 粗細兩層顆粒 + 補丁
+  ctx.fillStyle = '#3d3a40';
+  ctx.fillRect(0, zy(road[0]) - 4, W, zy(road[1]) - zy(road[0]) + 8);
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = `rgba(${rnd() < 0.5 ? '20,20,24' : '90,86,92'},0.18)`;
+    const pw = (0.8 + rnd() * 2) * pxU;
+    const ph = (0.6 + rnd() * 1.4) * pxV;
+    ctx.fillRect(
+      rnd() * (W - pw),
+      zy(road[0] + 0.6) + rnd() * (zy(road[1]) - zy(road[0] + 1.2) - ph),
+      pw,
+      ph,
+    );
+  }
+  for (let i = 0; i < 60000; i++) {
+    const g = rnd();
+    ctx.fillStyle = g < 0.5 ? 'rgba(18,17,22,0.45)' : 'rgba(130,125,132,0.32)';
+    ctx.fillRect(
+      rnd() * W,
+      zy(road[0]) + rnd() * (zy(road[1]) - zy(road[0])),
+      1 + rnd() * 2,
+      1 + rnd() * 2,
+    );
+  }
+  // 標線：中央分隔虛線（2 公尺畫、2 公尺空）+ 兩側白色邊線 + 騎樓前紅線（禁停）
+  ctx.fillStyle = '#e6dcb8';
+  for (let x = 0; x < STREET_U; x += 4) ctx.fillRect(x * pxU, zy(lane - 0.07), 2 * pxU, 0.14 * pxV);
+  ctx.fillStyle = '#d8d2c4';
+  ctx.fillRect(0, zy(road[0] + 0.35), W, 0.1 * pxV);
+  ctx.fillRect(0, zy(road[1] - 0.45), W, 0.1 * pxV);
+  ctx.fillStyle = '#b8483e';
+  ctx.fillRect(0, zy(road[0] + 0.05), W, 0.08 * pxV);
+  // 排水溝蓋（每 8 公尺一個，在邊溝）
+  for (const z of [road[0] + 0.12, road[1] - 0.42]) {
+    ctx.fillStyle = '#26242a';
+    ctx.fillRect(3 * pxU, zy(z), 0.9 * pxU, 0.3 * pxV);
+    ctx.fillStyle = '#4a464e';
+    for (let k = 0; k < 9; k++)
+      ctx.fillRect(3 * pxU + (k * 0.1 + 0.02) * pxU, zy(z + 0.03), 0.05 * pxU, 0.24 * pxV);
+  }
+  // 標線、磚面一起再壓一層髒污
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = `rgba(30,24,22,${rnd() * 0.08})`;
+    ctx.fillRect(rnd() * W, rnd() * H, 2 + rnd() * 6, 2 + rnd() * 6);
+  }
+
+  // 2) 積水 / 粗糙度 / 高度：逐像素算
+  const n1 = periodicNoise(5, 12);
+  const n2 = periodicNoise(9, 28);
+  const height = new Float32Array(W * H);
+  const wetData = new Uint8Array(W * H * 4);
+  const inRange = (z: number, [a, b]: readonly [number, number]) => z >= a && z <= b;
+  for (let y = 0; y < H; y++) {
+    const z = (y + 0.5) / pxV;
+    const onRoad = inRange(z, road);
+    // 邊溝最低、積水最多；路拱讓中央較乾
+    const gutter = onRoad
+      ? Math.max(Math.exp(-(((z - road[0]) / 0.45) ** 2)), Math.exp(-(((road[1] - z) / 0.45) ** 2)))
+      : 0;
+    const crown = onRoad ? Math.exp(-(((z - lane) / 2.2) ** 2)) : 0;
+    for (let x = 0; x < W; x++) {
+      const u = x / W;
+      const i = y * W + x;
+      // 大片窪地 + 小碎水窪
+      const big = n1(u * 12, z * 1.4);
+      const small = n2(u * 28, z * 3.5);
+      let pool = big * 0.65 + small * 0.35 + gutter * 0.55 - crown * 0.25;
+      let h: number;
+      let rough: number;
+      if (onRoad) {
+        h = 0.5 - pool * 0.3 + (rnd() - 0.5) * 0.12;
+        rough = 0.62 + rnd() * 0.2;
+        pool = smooth(0.62, 0.72, pool);
+      } else {
+        // 磚縫：凹下去、會積水
+        const s = 0.4;
+        const fx = (((x / pxU) % s) + s) % s;
+        const fz = ((z % s) + s) % s;
+        const edge = Math.min(fx, s - fx, fz, s - fz);
+        const joint = 1 - smooth(0.005, 0.03, edge);
+        h = 0.6 - joint * 0.5 + (rnd() - 0.5) * 0.05;
+        rough = 0.55 + joint * 0.3 + rnd() * 0.1;
+        pool = Math.max(smooth(0.68, 0.78, pool), joint * 0.55);
+      }
+      height[i] = h;
+      wetData[i * 4] = Math.round(pool * 255);
+      wetData[i * 4 + 1] = Math.round(Math.min(1, rough) * 255);
+      wetData[i * 4 + 2] = 0;
+      wetData[i * 4 + 3] = 255;
+    }
+  }
+
+  // 3) 高度 → 法線（Sobel，左右週期銜接）
+  const nData = new Uint8Array(W * H * 4);
+  const strength = 2.2;
+  for (let y = 0; y < H; y++) {
+    const y0 = Math.max(0, y - 1);
+    const y1 = Math.min(H - 1, y + 1);
+    for (let x = 0; x < W; x++) {
+      const x0 = (x - 1 + W) % W;
+      const x1 = (x + 1) % W;
+      const dx = (height[y * W + x1]! - height[y * W + x0]!) * strength;
+      const dy = (height[y1 * W + x]! - height[y0 * W + x]!) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * W + x) * 4;
+      nData[i] = Math.round((-dx / len) * 127.5 + 127.5);
+      nData[i + 1] = Math.round((-dy / len) * 127.5 + 127.5);
+      nData[i + 2] = Math.round((1 / len) * 127.5 + 127.5);
+      nData[i + 3] = 255;
+    }
+  }
+
+  const map = new CanvasTexture(color);
+  map.colorSpace = SRGBColorSpace;
+  // DataTexture 的第 0 列在下方，canvas 的第 0 列在上方：顏色貼圖翻過來對齊
+  map.flipY = false;
+  const wet = new DataTexture(wetData, W, H);
+  const normal = new DataTexture(nData, W, H);
+  for (const t of [map, wet, normal]) {
+    t.wrapS = RepeatWrapping;
+    t.wrapT = RepeatWrapping;
+    t.anisotropy = 8;
+    t.generateMipmaps = true;
+    t.minFilter = LinearMipmapLinearFilter;
+    t.needsUpdate = true;
+  }
+  streetCache = { map, wet, normal };
+  return streetCache;
+}
+
+function smooth(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
