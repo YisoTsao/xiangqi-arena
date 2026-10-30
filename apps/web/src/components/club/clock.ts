@@ -90,16 +90,17 @@ const DAY: Lighting = {
   neon: 0,
 };
 const DUSK: Lighting = {
-  sky: hex(0xb05a7a),
-  fog: hex(0xf08a5a),
-  sun: hex(0xff8a4a),
-  sunIntensity: 1.5,
-  sunElevation: 0.22,
+  // 傍晚要和夜晚分得開：天頂偏紫、地平線橘，低角度橘紅主光斜打在立面上，霓虹才剛亮一半
+  sky: hex(0x6a4f8e),
+  fog: hex(0xf0905c),
+  sun: hex(0xff7a3c),
+  sunIntensity: 2.8,
+  sunElevation: 0.2,
   sunAzimuth: 2.7,
-  hemiSky: hex(0xd88a8a),
-  hemiGround: hex(0x5a3a3a),
-  hemiIntensity: 0.8,
-  neon: 0.8,
+  hemiSky: hex(0xc88aa0),
+  hemiGround: hex(0x4a3236),
+  hemiIntensity: 0.75,
+  neon: 0.6,
 };
 
 /** 關鍵影格（遊戲小時 → 光線），之間線性內插 */

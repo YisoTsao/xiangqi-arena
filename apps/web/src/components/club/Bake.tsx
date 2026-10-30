@@ -111,7 +111,10 @@ function prepare(src: BufferGeometry, matrix: Matrix4): BufferGeometry | null {
 
 /** 決定兩個材質能不能共用：型別、顏色、貼圖與會影響外觀的旗標都相同 */
 function materialKey(mat: Material): string | null {
-  if (mat.type === 'ShaderMaterial' || mat.type === 'RawShaderMaterial') return null;
+  if (mat.type === 'ShaderMaterial' || mat.type === 'RawShaderMaterial') {
+    // 只用世界座標與 uv 的 shader（例如室內映射窗）可以合併，同一個材質物件才算同一組
+    return mat.userData.bakeable ? `shader|${mat.uuid}` : null;
+  }
   const m = mat as MeshStandardMaterial & {
     gradientMap?: { uuid: string } | null;
     color?: { getHexString(): string };
@@ -124,6 +127,10 @@ function materialKey(mat: Material): string | null {
     m.roughness,
     m.metalness,
     m.map?.uuid,
+    m.normalMap?.uuid,
+    m.roughnessMap?.uuid,
+    m.aoMap?.uuid,
+    m.envMapIntensity,
     m.emissiveMap?.uuid,
     m.gradientMap?.uuid,
     m.transparent,
