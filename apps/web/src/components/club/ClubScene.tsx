@@ -454,7 +454,10 @@ export function ClubScene({ hour, quality }: { hour?: number; quality: Quality }
         powerPreference: 'high-performance',
         stencil: false,
       }}
-      camera={{ fov: 40, near: 0.1, far: 300, position: TITLE_POS.toArray() }}
+      // near 不設太小：手機的深度緩衝精度低，貼在地面與牆上的招牌、標線才不會深度打架而閃爍
+      camera={{ fov: 40, near: 0.5, far: 300, position: TITLE_POS.toArray() }}
+      // 手機網址列伸縮時不要每一格都重配畫布與後處理緩衝（重配那一格會清成空白）
+      resize={{ debounce: 150 }}
       style={{ touchAction: 'none' }}
       aria-label="暮光遊樂館街口"
     >
