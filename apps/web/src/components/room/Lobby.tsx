@@ -95,10 +95,10 @@ export function Lobby({
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-5 px-4 py-6">
+    <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-5 px-4 pt-6">
       <header className="flex items-center justify-between">
         <Logo size="sm" />
-        <Button variant="ghost" onClick={onLeave}>
+        <Button variant="ghost" onClick={onLeave} data-testid="room-leave">
           <LogOut /> 離開
         </Button>
       </header>
@@ -160,7 +160,8 @@ export function Lobby({
         </CardContent>
       </Card>
 
-      <div className="sticky bottom-4 grid gap-2 sm:grid-cols-2">
+      {/* 底部按鈕列：不透明底色並疊在內容之上，捲動時不會和遊戲設定互相穿透 */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-auto grid gap-2 border-t border-ink-800 bg-ink-950/95 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:grid-cols-2">
         <Button
           size="lg"
           variant={me?.ready ? 'secondary' : 'outline'}

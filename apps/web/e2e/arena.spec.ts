@@ -131,3 +131,34 @@ test('online room: two players, third rejected, move sync, reconnect, resign, re
   // 再來一局交換紅黑：原本的黑方先走
   await expect(black.getByTestId('turn-status')).toContainText('輪到你');
 });
+
+test('leave goes straight home, even when the server never answers', async ({ browser }) => {
+  const alice = await newPlayer(browser, 'Alice');
+  // 開關打開後丟掉送往伺服器的訊息：伺服器收不到離開通知，模擬連線卡住
+  await alice.addInitScript(() => {
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (this: WebSocket, data) {
+      if (!(window as { __stall?: boolean }).__stall) send.call(this, data);
+    };
+  });
+
+  await alice.goto('/');
+  await alice.getByTestId('create-room').click();
+  await alice.getByTestId('create-submit').click();
+  await expect(alice.getByTestId('room-code')).toBeVisible();
+
+  await alice.evaluate(() => ((window as { __stall?: boolean }).__stall = true));
+  await alice.getByTestId('room-leave').click();
+  await expect(alice).toHaveURL(/\/$/);
+  await expect(alice.getByTestId('quick-start')).toBeVisible();
+  await expect(alice.getByText('連線中…')).toHaveCount(0);
+});
+
+test('error screen home button returns to the home page', async ({ browser }) => {
+  const alice = await newPlayer(browser, 'Alice');
+  await alice.goto('/room/ZZZZZZ');
+  await expect(alice.getByTestId('room-error')).toBeVisible();
+  await alice.getByTestId('room-home').click();
+  await expect(alice).toHaveURL(/\/$/);
+  await expect(alice.getByTestId('quick-start')).toBeVisible();
+});

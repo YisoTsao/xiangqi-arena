@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { CatmullRomCurve3, SpotLight, Vector3 } from 'three';
 import {
   BENCH,
@@ -14,52 +14,111 @@ import {
   VENDING,
   type Box as Area,
 } from './layout';
+import { AssetSlot, type AssetId } from './assets';
 import { Bake } from './Bake';
-import { Glow, Lantern, Plant, Rounded, Sign, Wood, useNeon, useQuality } from './props';
+import { Lantern, Plant, Rounded, Sign, Wood, useNeon, useQuality } from './props';
 import { CLUB } from './signs';
-import { cityWindows, facadeTile, shutter, tiled } from './textures';
+import { InteriorWindow } from './InteriorWindow';
 import { LampCone, RainyStreet } from './Rain';
+import { useClub } from './store';
+import { usePbr, type PbrSet } from './pbr';
+import { cityWindows, shutter, tiled } from './textures';
 
 type V3 = [number, number, number];
 const FH = HALL.height;
 
 // ── 地面 ───────────────────────────────────────────────
 
-function Ground() {
+/** 一塊貼地的 PBR 平面（size 單位公尺，tile 是一張貼圖代表幾公尺） */
+function Surface({
+  set,
+  size,
+  tile,
+  position,
+  color = '#ffffff',
+  envMapIntensity = 1,
+}: {
+  set: PbrSet;
+  size: [number, number];
+  tile: number;
+  position: V3;
+  color?: string;
+  envMapIntensity?: number;
+}) {
+  const maps = usePbr(set, size, tile);
+  return (
+    <mesh rotation-x={-Math.PI / 2} position={position} receiveShadow>
+      <planeGeometry args={size} />
+      <meshStandardMaterial {...maps} color={color} envMapIntensity={envMapIntensity} />
+    </mesh>
+  );
+}
+
+/** 水泥緣石：方塊 + 水泥貼圖，前緣有一條漆過的黃線 */
+function Curb({ z }: { z: number }) {
+  const maps = usePbr('concrete', [120, 0.6], 1);
+  return (
+    <mesh position={[0, 0.07, z]} castShadow={false} receiveShadow>
+      <boxGeometry args={[120, 0.14, 0.24]} />
+      <meshStandardMaterial {...maps} color="#d8cfbf" />
+    </mesh>
+  );
+}
+
+/**
+ * 地面。晴天用 PBR 貼圖組（騎樓陶磚、柏油、排水溝、標線）；
+ * 雨天時人行道到對街這一帶改由 Rain.tsx 的濕街面接手（同一張平面做倒影），這裡只留遠處地面與立體物。
+ */
+function Ground({ rain }: { rain: boolean }) {
   return (
     <group>
-      {/* 人行道與馬路是 Rain.tsx 的濕街面（同一張平面、同一次反射）；這裡只剩遠處地面與立體物 */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[160, 120]} />
-        <meshStandardMaterial color="#3e3833" roughness={0.95} />
-      </mesh>
+      {/* 騎樓與人行道：20cm 陶磚格紋 */}
+      {!rain && <Surface set="arcade_tile" size={[120, 3.5]} tile={1.2} position={[0, 0, 1.75]} />}
+      {/* 遠處地面與對面人行道 */}
+      <Surface set="concrete" size={[160, 120]} tile={3} position={[0, -0.01, 0]} color="#a89a8a" />
+      {!rain && (
+        <>
+          {/* 馬路：低窪處積水，粗糙度低，夜晚會映出招牌與路燈 */}
+          <Surface
+            set="asphalt"
+            size={[120, 7.2]}
+            tile={4}
+            position={[0, 0.001, 7.1]}
+            envMapIntensity={1.4}
+          />
+          {/* 路邊排水溝 */}
+          {[3.78, 10.42].map((z) => (
+            <Surface
+              key={z}
+              set="concrete"
+              size={[120, 0.32]}
+              tile={1}
+              position={[0, 0.003, z]}
+              color="#7d756c"
+            />
+          ))}
+          {Array.from({ length: 24 }, (_, i) => (
+            <mesh key={i} rotation-x={-Math.PI / 2} position={[-46 + i * 4, 0.006, 7.1]}>
+              <planeGeometry args={[2, 0.14]} />
+              <meshStandardMaterial color="#e2d29e" roughness={0.55} />
+            </mesh>
+          ))}
+        </>
+      )}
       {/* 斑馬線 */}
       {Array.from({ length: 8 }, (_, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[-13, 0.006, 4.1 + i * 0.85]}>
           <planeGeometry args={[2.6, 0.45]} />
-          <meshStandardMaterial color="#cfc8b8" roughness={0.32} />
+          <meshStandardMaterial color="#e6ddc8" roughness={0.55} />
         </mesh>
       ))}
       {/* 人孔蓋 */}
       <mesh rotation-x={-Math.PI / 2} position={[3.5, 0.007, 5.6]}>
         <circleGeometry args={[0.38, 24]} />
-        <meshStandardMaterial color="#3a3640" metalness={1} roughness={0.28} />
+        <meshStandardMaterial color="#3a3640" metalness={1} roughness={0.42} />
       </mesh>
-      {/* 緣石 */}
-      <Rounded
-        size={[120, 0.14, 0.24]}
-        position={[0, 0.07, 3.5]}
-        color="#cfc2ad"
-        radius={0.03}
-        castShadow={false}
-      />
-      <Rounded
-        size={[120, 0.14, 0.24]}
-        position={[0, 0.07, 10.8]}
-        color="#cfc2ad"
-        radius={0.03}
-        castShadow={false}
-      />
+      <Curb z={3.5} />
+      <Curb z={10.8} />
     </group>
   );
 }
@@ -142,12 +201,11 @@ function Window({
         radius={0.03}
         castShadow={false}
       />
-      <Glow
-        size={[size[0], size[1], 0.04]}
-        position={[0, 0, 0.02]}
-        color={light}
-        base={0.06}
-        strength={0.65}
+      <InteriorWindow
+        size={size}
+        position={[0, 0, 0.04]}
+        light={light}
+        seed={Math.round(position[0] * 7 + position[1] * 13)}
       />
       <mesh position-z={0.05}>
         <boxGeometry args={[0.05, size[1], 0.02]} />
@@ -232,8 +290,8 @@ function BulbFrame({ size, position }: { size: [number, number]; position: V3 })
 
 function ClubFacade({ inside }: { inside: boolean }) {
   const quality = useQuality();
-  const wall = useMemo(() => tiled(facadeTile('#ead2ad', 3), 6, 4), []);
   const top = FH * 4;
+  const wall = usePbr('facade_tile', [18.6, top - FH], 1);
   const floors = [
     { f: 1, light: '#ffc27a', label: '2F 牌桌館', color: CLUB.green },
     { f: 2, light: '#b98cf0', label: '3F 電玩網咖', color: CLUB.purple },
@@ -259,13 +317,19 @@ function ClubFacade({ inside }: { inside: boolean }) {
             repeat={3}
             color="#c79a72"
           />
-          <Glow
-            size={[b! - a! - 0.2, 2.1, 0.04]}
-            position={[(a! + b!) / 2, 1.55, 0.02]}
-            color="#f5a050"
-            base={0.12}
-            strength={0.24}
-          />
+          {/* 櫥窗玻璃：看得到後面真正的 1F 麻將館與暖光，表面反射天色與招牌 */}
+          <mesh position={[(a! + b!) / 2, 1.55, 0.03]} renderOrder={3}>
+            <planeGeometry args={[b! - a! - 0.2, 2.1]} />
+            <meshStandardMaterial
+              color="#fff1dc"
+              transparent
+              opacity={0.12}
+              roughness={0.06}
+              metalness={0}
+              envMapIntensity={1.1}
+              depthWrite={false}
+            />
+          </mesh>
           {Array.from({ length: 5 }, (_, i) => (
             <Wood
               key={i}
@@ -367,7 +431,7 @@ function ClubFacade({ inside }: { inside: boolean }) {
       {/* 2F 以上樓體 */}
       <mesh position={[0, FH + (top - FH) / 2, HALL.minZ / 2]} castShadow receiveShadow>
         <boxGeometry args={[18.6, top - FH, -HALL.minZ + 0.3]} />
-        <meshStandardMaterial map={wall} roughness={0.85} />
+        <meshStandardMaterial {...wall} color="#ead2ad" />
       </mesh>
       {[1, 2, 3, 4].map((f) => (
         <Rounded
@@ -510,24 +574,22 @@ function Shophouse({ s }: { s: ShopSpec }) {
   const w = s.x1 - s.x0;
   const cx = (s.x0 + s.x1) / 2;
   const h = s.floors * FH;
-  const tex = useMemo(
-    () => tiled(facadeTile(s.wall, Math.round(s.x0)), w / 3, h / 3),
-    [s.wall, s.x0, w, h],
-  );
+  const tex = usePbr('facade_tile', [w - 0.1, h], 1);
   const shut = useMemo(() => tiled(shutter(), 2, 2), []);
   return (
     <group>
       <mesh position={[cx, h / 2, -6]} castShadow receiveShadow>
         <boxGeometry args={[w - 0.1, h, 12]} />
-        <meshStandardMaterial map={tex} roughness={0.85} />
+        <meshStandardMaterial {...tex} color={s.wall} />
       </mesh>
       {s.open ? (
-        <Glow
-          size={[w - 1.2, 2.3, 0.04]}
-          position={[cx, 1.3, 0.02]}
-          color="#ffb466"
-          base={0.2}
-          strength={0.32}
+        <InteriorWindow
+          size={[w - 1.2, 2.3]}
+          position={[cx, 1.3, 0.04]}
+          light="#ffb466"
+          depth={4}
+          offChance={0}
+          seed={Math.round(cx * 5)}
         />
       ) : (
         <mesh position={[cx, 1.3, 0.03]}>
@@ -647,33 +709,16 @@ const SHOPS: ShopSpec[] = [
 function StreetLamp({ x, z }: { x: number; z: number }) {
   const neon = useNeon();
   const quality = useQuality();
-  // 真的往下照的燈：濕路面上拉出長長的反光（低畫質省略，只留發光燈泡）
+  // 往下照的燈：在柏油與地磚上留下一圈暖光（不投影，低畫質省略，只留發光燈泡）
   const spot = useMemo(() => {
-    const l = new SpotLight('#ffd08a', 0, 14, 0.95, 0.55, 1.6);
+    const l = new SpotLight('#ffcf8a', 0, 13, 0.85, 0.6, 2);
     l.position.set(0, 3.8, -0.62);
-    l.target.position.set(0, 0, -0.2);
+    l.target.position.set(0, 0, 0.4);
     return l;
   }, []);
-  spot.intensity = neon * 26;
+  spot.intensity = neon * 38;
   return (
     <group position={[x, 0, z]}>
-      <mesh position-y={2.1} castShadow>
-        <cylinderGeometry args={[0.06, 0.1, 4.2, 12]} />
-        <meshStandardMaterial color={CLUB.green} metalness={1} roughness={0.45} />
-      </mesh>
-      <mesh position={[0, 4.15, -0.32]} rotation-x={Math.PI / 2}>
-        <torusGeometry args={[0.3, 0.035, 8, 16, Math.PI]} />
-        <meshStandardMaterial color={CLUB.green} metalness={1} roughness={0.45} />
-      </mesh>
-      <mesh position={[0, 3.85, -0.62]}>
-        <sphereGeometry args={[0.2, 16, 12]} />
-        <meshStandardMaterial
-          color="#fff2cc"
-          emissive="#ffd890"
-          emissiveIntensity={0.1 + neon * 3}
-          toneMapped={false}
-        />
-      </mesh>
       {quality !== 'low' && neon > 0.05 && (
         <>
           <primitive object={spot} />
@@ -681,6 +726,25 @@ function StreetLamp({ x, z }: { x: number; z: number }) {
           <LampCone position={[0, 3.75, -0.62]} />
         </>
       )}
+      <AssetSlot id="PROP_street_lamp">
+        <mesh position-y={2.1} castShadow>
+          <cylinderGeometry args={[0.06, 0.1, 4.2, 12]} />
+          <meshStandardMaterial color={CLUB.green} metalness={1} roughness={0.45} />
+        </mesh>
+        <mesh position={[0, 4.15, -0.32]} rotation-x={Math.PI / 2}>
+          <torusGeometry args={[0.3, 0.035, 8, 16, Math.PI]} />
+          <meshStandardMaterial color={CLUB.green} metalness={1} roughness={0.45} />
+        </mesh>
+        <mesh position={[0, 3.85, -0.62]}>
+          <sphereGeometry args={[0.2, 16, 12]} />
+          <meshStandardMaterial
+            color="#fff2cc"
+            emissive="#ffd890"
+            emissiveIntensity={0.1 + neon * 3}
+            toneMapped={false}
+          />
+        </mesh>
+      </AssetSlot>
     </group>
   );
 }
@@ -943,16 +1007,58 @@ function Skyline() {
 }
 
 /** 街口：馬路、鄰居店面、遠景、路燈、電線、機車、郵筒、販賣機，加上俱樂部外觀 */
+/**
+ * 把一個以世界座標畫的暫代模型放進資產插槽：GLB 以 at 為原點（底面中心、正面朝 +z），
+ * 暫代模型照舊用世界座標，所以兩者可以直接互換。
+ */
+function Placed({
+  id,
+  at: [x, z],
+  ry = 0,
+  children,
+}: {
+  id: AssetId;
+  at: readonly [number, number];
+  ry?: number;
+  children: ReactNode;
+}) {
+  return (
+    <group position={[x, 0, z]} rotation-y={ry}>
+      <AssetSlot id={id}>
+        <group rotation-y={-ry}>
+          <group position={[-x, 0, -z]}>{children}</group>
+        </group>
+      </AssetSlot>
+    </group>
+  );
+}
+
+const center = (b: Area): [number, number] => [(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2];
+const SHOP_SLOTS: AssetId[] = [
+  'ARCH_shophouse_A',
+  'ARCH_shophouse_B',
+  'ARCH_shophouse_C',
+  'ARCH_shophouse_D',
+];
+
+/** 街口：馬路、鄰居店面、遠景、路燈、電線、機車、郵筒、販賣機，加上俱樂部外觀 */
 export function Street({ inside }: { inside: boolean }) {
   const quality = useQuality();
+  const rain = useClub((s) => s.weather === 'rain');
   return (
     <>
-      <RainyStreet inside={inside} />
-      <Bake deps={[inside, quality]}>
-        <Ground />
-        <ClubFacade inside={inside} />
-        {SHOPS.map((s) => (
-          <Shophouse key={s.x0} s={s} />
+      {rain && <RainyStreet inside={inside} />}
+      <Bake deps={[inside, quality, rain]}>
+        <Ground rain={rain} />
+        <group visible={!inside}>
+          <AssetSlot id="ARCH_club_facade">
+            <ClubFacade inside={inside} />
+          </AssetSlot>
+        </group>
+        {SHOPS.map((s, i) => (
+          <Placed key={s.x0} id={SHOP_SLOTS[i]!} at={[(s.x0 + s.x1) / 2, 0]}>
+            <Shophouse s={s} />
+          </Placed>
         ))}
         <Skyline />
         {STREET_LAMPS.map(([x, z]) => (
@@ -961,10 +1067,16 @@ export function Street({ inside }: { inside: boolean }) {
         {!inside && <LanternString />}
         {quality !== 'low' && <PowerLines />}
         {SCOOTERS.map(([x, z], i) => (
-          <Scooter key={x} x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
+          <Placed key={x} id="PROP_scooter" at={[x, z]}>
+            <Scooter x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
+          </Placed>
         ))}
-        <Vending />
-        <Mailboxes />
+        <Placed id="PROP_vending_machine" at={center(VENDING)}>
+          <Vending />
+        </Placed>
+        <Placed id="PROP_mailbox_pair" at={MAILBOX}>
+          <Mailboxes />
+        </Placed>
         <Planters />
       </Bake>
     </>
