@@ -25,6 +25,13 @@ const A_LE_LINES = [
   '晚上最熱鬧，霓虹一亮客人就上門囉。',
 ];
 
+/** 截圖用的固定站位：室內全景、剛進門、牌桌旁 */
+const SPAWNS: Record<string, { pos: [number, number]; yaw: number }> = {
+  hall: { pos: [-0.4, -6.8], yaw: Math.PI },
+  door: { pos: [0, -1.2], yaw: Math.PI },
+  table: { pos: [-2, -3.9], yaw: Math.PI },
+};
+
 /** 遊戲時間：每 5 秒更新一次（網址加 ?hour=20 可固定時間，方便看夜景） */
 function useGameHour(override: number | undefined): number | null {
   // 伺服器端不知道時間：掛載後才開始算，避免 hydration 不一致
@@ -148,10 +155,11 @@ export function ClubScreen() {
     // 網址加 ?weather=clear／rain 可以固定天氣（截圖比對用）
     const w = new URLSearchParams(window.location.search).get('weather');
     if (w === 'clear' || w === 'rain') useClub.getState().setWeather(w);
-    // 網址加 ?spawn=hall 直接站在 1F 室內（截圖檢視用）
-    if (new URLSearchParams(window.location.search).get('spawn') === 'hall') {
-      player.pos = [-0.4, -6.8];
-      player.yaw = Math.PI;
+    // 網址加 ?spawn=hall／door／table 直接站在 1F 室內固定位置（截圖比對用）
+    const spawn = SPAWNS[new URLSearchParams(window.location.search).get('spawn') ?? ''];
+    if (spawn) {
+      player.pos = [...spawn.pos];
+      player.yaw = spawn.yaw;
       useClub.setState({ mode: 'walk', inside: true });
     }
   }, [reset]);

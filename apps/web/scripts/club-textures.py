@@ -204,8 +204,131 @@ def concrete(n: int = 512) -> None:
     save('concrete', albedo, height, rough, ao, 2.2)
 
 
+def wood_floor(n: int = 1024) -> None:
+    """1F 木地板（1.2m × 1.2m）：8 排 15cm 寬的長條柚木，錯縫；木紋沿板長、每片色差，
+    清漆面（粗糙度低），縫與磨損處粗糙"""
+    rng = np.random.default_rng(51)
+    rows = 8
+    y, x = np.mgrid[0:n, 0:n] / n
+    row = np.floor(y * rows).astype(int)
+    # 每排的板長與起點不同：用每排一個偏移 + 每 0.6 張貼圖一片
+    offs = rng.random(rows)
+    xs = x / 0.5 + offs[row]
+    plank = np.floor(xs).astype(int) + row * 7
+    u = xs % 1
+    v = (y * rows) % 1
+    per = rng.random(rows * 7 + 16)
+    tone = per[plank % len(per)]
+    # 木紋：沿 x 拉長的雜訊（先做寬場再在 x 方向模糊）
+    g = field(n, rng, n / 2, n / 30, 0.6)
+    grain = np.repeat(blur(g, 1).mean(axis=1, keepdims=True), n, 1) * 0.0 + g
+    grain = blur(np.roll(grain, 0, 1), 0.5)
+    lines = 0.5 + 0.5 * np.sin((y * rows * 9 + grain * 6 + per[(plank + 3) % len(per)] * 6) * np.pi)
+    base = np.stack([0.46, 0.31, 0.21]) * 0.9
+    col = base * (0.88 + tone[..., None] * 0.2) * (0.92 + lines[..., None] * 0.12)
+    # 縫
+    gap_v = np.minimum(v, 1 - v) * rows * 0.15 * n / n
+    seam = np.clip(np.minimum(np.minimum(v, 1 - v) / 0.035, np.minimum(u, 1 - u) / 0.006), 0, 1)
+    albedo = col * (0.7 + 0.3 * seam[..., None])
+    wear = field(n, rng, 6, 1, 1.4)
+    albedo *= (0.95 + wear[..., None] * 0.1)
+    height = seam * 0.6 + lines * 0.05
+    rough = np.clip(0.38 + (1 - seam) * 0.4 + wear * 0.18 - lines * 0.05, 0.2, 1)
+    ao = np.clip(0.5 + seam * 0.5, 0, 1)
+    save('wood_floor', albedo, height, rough, ao, 4)
+
+
+def terrazzo_floor(n: int = 1024) -> None:
+    """玄關磨石子（1.5m × 1.5m）：米色底、大小石粒、每 75cm 一條銅分割條；拋光（粗糙度低）"""
+    rng = np.random.default_rng(61)
+    base = np.ones((n, n, 3)) * srgb('#d9c7a6')
+    cloud = field(n, rng, 8, 1, 1.4)
+    albedo = base * (0.94 + cloud[..., None] * 0.1)
+    height = np.zeros((n, n))
+    chips = [srgb(c) for c in ('#a88f6c', '#f1e6cf', '#7f8b78', '#b9765c', '#5f6a68', '#c9b08a')]
+    yy, xx = np.mgrid[0:n, 0:n]
+    for _ in range(2600):
+        cx, cy = rng.random() * n, rng.random() * n
+        r = 1.5 + rng.random() ** 2 * 7
+        c = chips[rng.integers(len(chips))]
+        x0, x1 = int(cx - r - 1), int(cx + r + 2)
+        y0, y1 = int(cy - r - 1), int(cy + r + 2)
+        ys = np.arange(y0, y1) % n
+        xs_ = np.arange(x0, x1) % n
+        dy = (np.arange(y0, y1) - cy)[:, None]
+        dx = (np.arange(x0, x1) - cx)[None, :]
+        m = (dx * dx + dy * dy * 1.3) < r * r
+        sub = albedo[np.ix_(ys, xs_)]
+        sub[m] = c * (0.9 + rng.random() * 0.2)
+        albedo[np.ix_(ys, xs_)] = sub
+        hs = height[np.ix_(ys, xs_)]
+        hs[m] = 0.02
+        height[np.ix_(ys, xs_)] = hs
+    strip = np.zeros((n, n))
+    for k in (0, n // 2):
+        strip[:, max(0, k - 2):k + 2] = 1
+        strip[max(0, k - 2):k + 2, :] = 1
+    strip = np.maximum(strip, np.roll(strip, -2, 0))
+    albedo = albedo * (1 - strip[..., None]) + srgb('#b0844a') * strip[..., None]
+    rough = np.clip(0.22 + cloud * 0.12 - strip * 0.05, 0.12, 1)
+    metal = strip * 1.0
+    ao = np.ones((n, n))
+    save('terrazzo_floor', albedo, height + strip * 0.01, rough, ao, 3, metal)
+
+
+def wall_tile(n: int = 512) -> None:
+    """牆裙復古馬賽克（0.6m × 0.6m）：6×6 片 10cm 釉面磚，淡綠色差；縫凹、釉面亮"""
+    rng = np.random.default_rng(71)
+    cols = rows = 6
+    tid, face, u, v = tiles(n, cols, rows, 0.008, 1.0, False, rng)
+    per = rng.random(cols * rows + 8)
+    greens = [srgb(c) for c in ('#6f9a88', '#76a28f', '#6a9482', '#7aa592', '#82ab98')]
+    col = np.array([greens[int(p * len(greens)) % len(greens)] for p in per])[tid]
+    glaze = field(n, rng, n / 4, n / 20, 0.3)
+    # 釉面中間略亮、邊緣略深
+    dome = 1 - ((u - 0.5) ** 2 + (v - 0.5) ** 2) * 0.5
+    col = col * (0.95 + glaze[..., None] * 0.08) * dome[..., None]
+    grout = srgb('#e2dccb')
+    albedo = col * face[..., None] + grout * (1 - face[..., None])
+    height = face * 0.8 + dome * 0.15
+    rough = np.clip(0.18 + (1 - face) * 0.6 + glaze * 0.08, 0.1, 1)
+    ao = np.clip(0.55 + face * 0.45, 0, 1)
+    save('wall_tile', albedo, height, rough, ao, 5)
+
+
+def wallpaper(n: int = 512) -> None:
+    """上半牆壁紙（0.8m × 0.8m）：米色底、淡淡的直條與小花，紙面有細微壓紋"""
+    rng = np.random.default_rng(81)
+    y, x = np.mgrid[0:n, 0:n] / n
+    base = srgb('#efd9b6')
+    stripe = (np.sin(x * np.pi * 2 * 8) > 0.6).astype(float)
+    albedo = np.ones((n, n, 3)) * base * (1 - stripe[..., None] * 0.06)
+    # 小花：交錯排列的五瓣
+    flower = np.zeros((n, n))
+    for i in range(4):
+        for j in range(4):
+            cx = (i + 0.5 + (j % 2) * 0.5) / 4 % 1
+            cy = (j + 0.5) / 4
+            for p in range(5):
+                a = p / 5 * np.pi * 2
+                dx = (x - cx - np.cos(a) * 0.018 + 0.5) % 1 - 0.5
+                dy = (y - cy - np.sin(a) * 0.018 + 0.5) % 1 - 0.5
+                flower = np.maximum(flower, np.clip(1 - np.sqrt(dx * dx + dy * dy) / 0.013, 0, 1))
+    flower = np.clip(flower * 3, 0, 1)
+    albedo = albedo * (1 - flower[..., None] * 0.35) + srgb('#c06a52') * flower[..., None] * 0.35
+    emboss = field(n, rng, n / 2, n / 8, 0.0)
+    height = emboss * 0.3 + flower * 0.2
+    rough = np.clip(0.82 + emboss * 0.1, 0.5, 1)
+    ao = cavity_ao(height, 2, 1.5)
+    save('wallpaper', albedo, height, rough, ao, 1.5)
+
+
 if __name__ == '__main__':
     asphalt()
     arcade_tile()
     facade_tile()
     concrete()
+    wood_floor()
+    terrazzo_floor()
+    wall_tile()
+    wallpaper()

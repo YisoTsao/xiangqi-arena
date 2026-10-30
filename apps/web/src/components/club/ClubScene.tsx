@@ -31,7 +31,7 @@ import {
 import { MahjongHall } from './MahjongHall';
 import { NeonContext, QualityContext, useQuality, type Quality } from './props';
 import { Street } from './Street';
-import { player, useClub, walkTo } from './store';
+import { player, transition, useClub, walkTo } from './store';
 
 /** 鏡頭目前的水平角度（平滑過的），方向鍵依它轉換 */
 const view = { yaw: CAMERA_YAW.outside };
@@ -117,8 +117,19 @@ const SHADOW_HALF = 15;
  * PBR 材質的反射與漫射環境光都從這裡來，所以積水、櫥窗玻璃、金屬招牌框映出的是「這條街此刻」的顏色，
  * 不是一張不相干的 HDR。只在時段明顯改變時重建（約 1/20 霓虹亮度一階），平常不花成本。
  */
-function SceneProbe({ sky, horizon, neon }: { sky: Color; horizon: Color; neon: number }) {
-  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}`;
+function SceneProbe({
+  sky,
+  horizon,
+  neon,
+  inside,
+}: {
+  sky: Color;
+  horizon: Color;
+  neon: number;
+  inside: boolean;
+}) {
+  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}${inside}`;
+  if (inside) return <HallProbe key={key} neon={neon} />;
   return (
     // 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到
     <Environment
@@ -180,6 +191,47 @@ function SceneProbe({ sky, horizon, neon }: { sky: Color; horizon: Color; neon: 
   );
 }
 
+/**
+ * 1F 室內的環境貼圖：深木色的牆與地板、暖色天花、六盞桌燈的亮塊，和紙窗透進來的光
+ * （白天暖白、夜晚冷藍）。漆面木頭、茶具、麻將牌映出的是室內的燈，而不是街上的天空。
+ */
+function HallProbe({ neon }: { neon: number }) {
+  const night = neon > 0.5;
+  return (
+    <Environment resolution={64} frames={1} environmentIntensity={0.55}>
+      <mesh scale={30}>
+        <sphereGeometry args={[1, 24, 12]} />
+        <meshBasicMaterial color="#3a2618" side={BackSide} toneMapped={false} />
+      </mesh>
+      <Lightformer
+        form="rect"
+        color="#ffd9a8"
+        intensity={0.9}
+        position={[0, 6, 0]}
+        rotation-x={Math.PI / 2}
+        scale={[20, 14, 1]}
+      />
+      {[-4, 0, 4].map((x) => (
+        <Lightformer
+          key={x}
+          form="circle"
+          color="#ffc878"
+          intensity={3}
+          position={[x, 4, -2]}
+          rotation-x={Math.PI / 2}
+          scale={1.4}
+        />
+      ))}
+      <Lightformer
+        color={night ? '#9cc4ff' : '#fff1d6'}
+        intensity={night ? 0.8 : 1.6}
+        position={[0, 2, -9]}
+        scale={[14, 1.6, 1]}
+      />
+    </Environment>
+  );
+}
+
 function InteriorClock({ sky }: { sky: Color }) {
   useInteriorWindowClock(sky);
   return null;
@@ -196,6 +248,9 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const [neon, setNeon] = useState(1);
   const [sky, setSky] = useState(() => ({ top: new Color(), bottom: new Color() }));
 
+  /** 依時段算好的基準值；進出門的內插在每格的 useFrame 裡做 */
+  const base = useRef({ sun: 0, hemiOut: 0, hemiIn: 0, fog: { near: [36, 26], far: [95, 70] } });
+
   useEffect(() => {
     const apply = () => {
       const l = lightingAt(hour ?? gameHourAt(Date.now()));
@@ -208,13 +263,13 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
         skyTop.lerp(grey.clone().multiplyScalar(0.75), 0.75);
       }
       scene.background = fog;
-      // 室內時遠景淡一點，讓暖色牌桌區跳出來
-      scene.fog = rain
-        ? new Fog(fog, inside ? 22 : 18, inside ? 60 : 62)
-        : new Fog(fog, inside ? 26 : 36, inside ? 70 : 95);
+      // 室內時遠景淡一點，讓暖色牌桌區跳出來（[室外, 室內]）
+      base.current.fog = rain
+        ? { near: [18, 22], far: [62, 60] }
+        : { near: [36, 26], far: [95, 70] };
+      if (!(scene.fog instanceof Fog)) scene.fog = new Fog(fog, 36, 95);
+      scene.fog.color.copy(fog);
       setSky({ top: skyTop, bottom: fog });
-      // 進到室內：屋頂擋住天光（剖面圖拿掉了屋頂，用降低室外光代替），主光換成桌燈
-      const dim = inside ? 0.22 : 1;
       if (sun.current) {
         const c = Math.cos(l.sunElevation);
         sunDir.current.set(
@@ -223,20 +278,37 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
           c * Math.sin(l.sunAzimuth),
         );
         sun.current.color.setRGB(...l.sun);
-        sun.current.intensity = l.sunIntensity * dim * (rain ? 0.35 : 1);
       }
+      base.current.sun = l.sunIntensity * (rain ? 0.35 : 1);
       if (hemi.current) {
         hemi.current.color.setRGB(...l.hemiSky);
         hemi.current.groundColor.setRGB(...l.hemiGround);
-        hemi.current.intensity = l.hemiIntensity * (inside ? 0.4 : 0.75) * (rain ? 0.8 : 1);
       }
+      base.current.hemiOut = l.hemiIntensity * 0.75 * (rain ? 0.8 : 1);
+      base.current.hemiIn = l.hemiIntensity * 0.4 * (rain ? 0.8 : 1);
       setNeon(Math.round(l.neon * 20) / 20);
     };
     apply();
     // CLUB_ART_BIBLE §5.2：每 5 秒更新一次就夠
     const id = setInterval(apply, 5000);
     return () => clearInterval(id);
-  }, [hour, scene, inside, rain]);
+  }, [hour, scene, rain]);
+
+  // 進出門：室外光與霧在約 0.6 秒內內插到室內值（屋頂擋住天光，剖面圖拿掉了屋頂，用降低室外光代替）
+  useFrame((_, delta) => {
+    const target = useClub.getState().inside ? 1 : 0;
+    const t = transition;
+    t.inside += (target - t.inside) * (1 - Math.exp(-Math.min(delta, 0.1) * 7));
+    if (Math.abs(target - t.inside) < 1e-3) t.inside = target;
+    const m = t.inside;
+    const b = base.current;
+    if (sun.current) sun.current.intensity = b.sun * (1 - 0.78 * m);
+    if (hemi.current) hemi.current.intensity = b.hemiOut + (b.hemiIn - b.hemiOut) * m;
+    if (scene.fog instanceof Fog) {
+      scene.fog.near = b.fog.near[0]! + (b.fog.near[1]! - b.fog.near[0]!) * m;
+      scene.fog.far = b.fog.far[0]! + (b.fog.far[1]! - b.fog.far[0]!) * m;
+    }
+  });
 
   // 陰影相機跟著角色走（以 texel 為單位對齊，移動時陰影邊緣不閃），範圍小一點換取較細的陰影
   useFrame(() => {
@@ -270,7 +342,9 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
         shadow-camera-far={80}
       />
       <hemisphereLight ref={hemi} />
-      {quality !== 'low' && <SceneProbe sky={sky.top} horizon={sky.bottom} neon={neon} />}
+      {quality !== 'low' && (
+        <SceneProbe sky={sky.top} horizon={sky.bottom} neon={neon} inside={inside} />
+      )}
       <InteriorClock sky={sky.top} />
       {children}
     </NeonContext.Provider>

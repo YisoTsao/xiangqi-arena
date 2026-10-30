@@ -11,7 +11,15 @@ import { RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from 'three';
  * 載入是非同步的：先回傳貼圖物件，圖片到了才上傳 GPU，不會擋住第一格畫面。
  * 同一組、同一個重複次數的貼圖共用同一個物件，Bake 才能把材質相同的 mesh 合併。
  */
-export type PbrSet = 'asphalt' | 'arcade_tile' | 'facade_tile' | 'concrete';
+export type PbrSet =
+  | 'asphalt'
+  | 'arcade_tile'
+  | 'facade_tile'
+  | 'concrete'
+  | 'wood_floor'
+  | 'terrazzo_floor'
+  | 'wall_tile'
+  | 'wallpaper';
 
 export interface PbrMaps {
   map: Texture;

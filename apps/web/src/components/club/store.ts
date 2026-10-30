@@ -23,6 +23,12 @@ export const player = {
   moving: false,
 };
 
+/**
+ * 室內外過渡：0 = 街上、1 = 室內，進出門時約 0.6 秒內平滑變化（DayNight 每格更新）。
+ * 太陽、天光、霧與室內燈都依它內插，進門不會一格之內突然變暗或變亮。
+ */
+export const transition = { inside: 0 };
+
 interface ClubState {
   mode: ClubMode;
   /** 角色在 1F 室內（外觀與樓上會藏起來） */
