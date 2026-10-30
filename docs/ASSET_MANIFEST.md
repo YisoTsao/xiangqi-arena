@@ -4,17 +4,21 @@
 > 狀態：**TODO** = 場景裡還是程式拼出來的暫代模型（不是成品）；**v1** = 可用的第一版、之後可能替換；**OK** = 通過驗收。
 > 程式端的插槽清單在 `apps/web/src/components/club/assets.tsx` 的 `ASSET_SLOTS`，交件時兩邊一起改。
 
-## 1. 貼圖（Phase 1 已交付）
+## 1. 貼圖（Phase 1、2 已交付）
 
-| 名稱          | 用途               | 檔案                                      | 來源                                | 授權       | 解析度 | 狀態 |
-| ------------- | ------------------ | ----------------------------------------- | ----------------------------------- | ---------- | ------ | ---- |
-| `asphalt`     | 馬路（含積水）     | `public/club/textures/asphalt/*.webp`     | `scripts/club-textures.py` 程式繪製 | 本專案自製 | 1024²  | v1   |
-| `arcade_tile` | 騎樓／人行道陶磚   | `public/club/textures/arcade_tile/*.webp` | 同上                                | 本專案自製 | 1024²  | v1   |
-| `facade_tile` | 二丁掛外牆磁磚     | `public/club/textures/facade_tile/*.webp` | 同上                                | 本專案自製 | 1024²  | v1   |
-| `concrete`    | 緣石、排水溝、地面 | `public/club/textures/concrete/*.webp`    | 同上                                | 本專案自製 | 512²   | v1   |
+| 名稱             | 用途                 | 檔案                                         | 來源                                | 授權       | 解析度 | 狀態 |
+| ---------------- | -------------------- | -------------------------------------------- | ----------------------------------- | ---------- | ------ | ---- |
+| `asphalt`        | 馬路（含積水）       | `public/club/textures/asphalt/*.webp`        | `scripts/club-textures.py` 程式繪製 | 本專案自製 | 1024²  | v1   |
+| `arcade_tile`    | 騎樓／人行道陶磚     | `public/club/textures/arcade_tile/*.webp`    | 同上                                | 本專案自製 | 1024²  | v1   |
+| `facade_tile`    | 二丁掛外牆磁磚       | `public/club/textures/facade_tile/*.webp`    | 同上                                | 本專案自製 | 1024²  | v1   |
+| `concrete`       | 緣石、排水溝、地面   | `public/club/textures/concrete/*.webp`       | 同上                                | 本專案自製 | 512²   | v1   |
+| `wood_floor`     | 1F 柚木長條地板      | `public/club/textures/wood_floor/*.webp`     | 同上（Phase 2）                     | 本專案自製 | 1024²  | v1   |
+| `terrazzo_floor` | 玄關磨石子＋銅分割條 | `public/club/textures/terrazzo_floor/*.webp` | 同上（Phase 2）                     | 本專案自製 | 1024²  | v1   |
+| `wall_tile`      | 綠色馬賽克腰牆       | `public/club/textures/wall_tile/*.webp`      | 同上（Phase 2）                     | 本專案自製 | 1024²  | v1   |
+| `wallpaper`      | 腰牆以上的壁紙       | `public/club/textures/wallpaper/*.webp`      | 同上（Phase 2）                     | 本專案自製 | 1024²  | v1   |
 
 v1 是程式產生的無縫貼圖（albedo + normal + ORM），比之前只有顏色的畫布貼圖多了法線與粗糙度，但細節仍偏規則。
-要再往上一級，建議用 Substance Designer 或掃描素材（Poly Haven / ambientCG 的 CC0 素材可直接用）照同樣的檔名與通道替換，見 §4。
+要再往上一級，建議用 Substance Designer 或掃描素材（Poly Haven / ambientCG 的 CC0 素材可直接用）照同樣的檔名與通道替換，見 §5。
 
 ## 2. 3D 模型：Phase 1 街口（全部缺，需要製作）
 
@@ -39,28 +43,40 @@ v1 是程式產生的無縫貼圖（albedo + normal + ORM），比之前只有�
 | `PROP_aircon`          | 窗型冷氣                                | 0.75 × 0.5 × 0.5                       | 背面中心                    | 1k         | 共用                      | 散熱鰭片、支架                                                                                                                              | TODO（插槽未接）     |
 | `PROP_street_clutter`  | 海報、菜單牌、電話亭或公用電話、腳踏車  | 各自                                   | 底面中心                    | 各 1～4k   | 共用 + decal              | 年代感與尺度要對，避免亂堆                                                                                                                  | TODO（場景裡還沒有） |
 
-## 3. 3D 模型：後續階段（先列規格，不在這一輪做）
+## 3. 3D 模型：Phase 2 1F 麻將館（全部缺，需要製作）
 
-| id                   | 階段    | 說明                                                                             | 狀態 |
-| -------------------- | ------- | -------------------------------------------------------------------------------- | ---- |
-| `CHAR_base_rig`      | Phase 3 | 共用骨架（3.2 頭身、1.5m），含 idle / walk / run / turn / sit / stand / interact | TODO |
-| `CHAR_player_A`      | Phase 3 | 主角（貝雷帽、長髮、條紋上衣、外套）；臉部五官貼圖、髮束分層、衣物接縫           | TODO |
-| `CHAR_npc_aLe`       | Phase 3 | 茶櫃台店員阿樂（圍裙）                                                           | TODO |
-| `CHAR_npc_patron`    | Phase 3 | 一般客人原型（換色、換髮型）                                                     | TODO |
-| `ARCH_hall_1F_kit`   | Phase 2 | 1F 麻將館：牆、柱、天花、窗簾、櫃台、玄關、隔間                                  | TODO |
-| `PROP_mahjong_table` | Phase 2 | 麻將桌 + 4 椅（坐姿錨點對齊 layout.ts 的 chairsOf）                              | TODO |
-| `PROP_hall_clutter`  | Phase 2 | 掛畫、菜單、燈具、置物架、茶具、盆栽                                             | TODO |
+室內尺寸與座標以 `layout.ts` 為準（`HALL`、`TABLES`、`COUNTER`、`chairsOf`）；模型要讓出通道淨空 ≥ 0.9m。
+材質沿用 §1 的室內貼圖組或各自 1024² ORM；會發光的燈罩用 `M_emissive_<名稱>`。燈光改烘焙：kit 需要第二組 UV（lightmap，無重疊）。
 
-## 4. 取得方式與授權
+| id                   | 用途                                      | 外框尺寸（寬×高×深）             | 原點               | 三角面預算 | 必要細節                                                                                               | 狀態 |
+| -------------------- | ----------------------------------------- | -------------------------------- | ------------------ | ---------- | ------------------------------------------------------------------------------------------------------ | ---- |
+| `ARCH_hall_1F_kit`   | 1F 牆、柱、天花、腰牆、踢腳、窗框與和紙窗 | 依 `HALL`（約 18 × 3.6 × 12）    | 室內地板中心       | 40k        | 牆分段模組（每段 ≤ 3m，方便動態遮擋淡出）、天花板格柵與燈槽、木窗框、門框與暖簾、玄關台階；lightmap UV | TODO |
+| `PROP_mahjong_table` | 麻將桌 ×6                                 | 0.9 × 0.78 × 0.9                 | 桌面中心正下方地面 | 3k         | 綠絨桌面（`M_felt`）、四邊抽屜與籌碼槽、桌腳、桌號牌插座                                               | TODO |
+| `PROP_hall_chair`    | 椅子 ×24                                  | 0.45 × 0.9 × 0.48                | 座面中心正下方地面 | 1.2k       | 紅色皮面座墊（可換色）、木椅背；坐姿錨點對齊 `chairsOf`                                                | TODO |
+| `PROP_hall_lamp`     | 桌上吊燈 ×6                               | 0.6 × 0.5 × 0.6（+ 吊線）        | 吊點               | 800        | 燈罩 `M_emissive_hall_lamp`、金屬吊線與天花座                                                          | TODO |
+| `PROP_hall_counter`  | 茶水櫃台＋後櫃                            | 依 `COUNTER`（約 3 × 1.1 × 0.7） | 正面底邊中心       | 6k         | 櫃台木作、茶具、熱水壺、收銀機、後櫃層板與茶罐                                                         | TODO |
+| `PROP_hall_stairs`   | 往 2F 的木樓梯                            | 1.2 × 3.6 × 4                    | 第一階前緣中心     | 4k         | 扶手、踏面止滑條、梯下收納                                                                             | TODO |
+| `PROP_hall_clutter`  | 掛畫、菜單板、時鐘、盆栽、置物架、雨傘桶  | 各自                             | 底面或掛點中心     | 各 0.5～3k | 年代感與尺度要對；菜單文字由程式畫（留出面板）                                                         | TODO |
+
+## 4. 3D 模型：後續階段（先列規格，不在這一輪做）
+
+| id                | 階段    | 說明                                                                             | 狀態 |
+| ----------------- | ------- | -------------------------------------------------------------------------------- | ---- |
+| `CHAR_base_rig`   | Phase 3 | 共用骨架（3.2 頭身、1.5m），含 idle / walk / run / turn / sit / stand / interact | TODO |
+| `CHAR_player_A`   | Phase 3 | 主角（貝雷帽、長髮、條紋上衣、外套）；臉部五官貼圖、髮束分層、衣物接縫           | TODO |
+| `CHAR_npc_aLe`    | Phase 3 | 茶櫃台店員阿樂（圍裙）                                                           | TODO |
+| `CHAR_npc_patron` | Phase 3 | 一般客人原型（換色、換髮型）                                                     | TODO |
+
+## 5. 取得方式與授權
 
 - **自己做（建議）**：Blender 依 [ART_BIBLE_LOBBY.md](ART_BIBLE_LOBBY.md) §7 製作，授權最乾淨。街口一輪（§2）約 6～9 人日。
 - **外包**：直接把 §2 的表格交給 3D 美術，附固定鏡頭截圖當參考；要求交 .blend 原始檔。
 - **CC0 素材**：貼圖可用 Poly Haven、ambientCG（CC0，可商用）；模型可參考 Quaternius、Kenney（CC0），但風格多半是 low-poly，需要重做材質才符合本規範。
 - **AI 生成（Tripo 等）**：只能當草稿，必須重拓樸、重拆 UV、檢查比例與服務條款，並在下表「AI 輔助」欄登記。
 
-## 5. 已進 repo 的資產登記
+## 6. 已進 repo 的資產登記
 
-| 名稱                                           | 類型 | 檔案                             | 來源 / 作者                         | 授權       | AI 輔助 | 三角面 | 貼圖  | LOD | 碰撞 / 錨點 | 驗收 |
-| ---------------------------------------------- | ---- | -------------------------------- | ----------------------------------- | ---------- | ------- | ------ | ----- | --- | ----------- | ---- |
-| asphalt / arcade_tile / facade_tile / concrete | 貼圖 | `apps/web/public/club/textures/` | `apps/web/scripts/club-textures.py` | 本專案自製 | 無      | —      | 1024² | —   | —           | v1   |
-| keyart-night / keyart-hall                     | 圖片 | `apps/web/public/club/`          | 既有                                | 既有       | 既有    | —      | —     | —   | —           | 既有 |
+| 名稱                                                                                                 | 類型 | 檔案                             | 來源 / 作者                         | 授權       | AI 輔助 | 三角面 | 貼圖  | LOD | 碰撞 / 錨點 | 驗收 |
+| ---------------------------------------------------------------------------------------------------- | ---- | -------------------------------- | ----------------------------------- | ---------- | ------- | ------ | ----- | --- | ----------- | ---- |
+| asphalt / arcade_tile / facade_tile / concrete / wood_floor / terrazzo_floor / wall_tile / wallpaper | 貼圖 | `apps/web/public/club/textures/` | `apps/web/scripts/club-textures.py` | 本專案自製 | 無      | —      | 1024² | —   | —           | v1   |
+| keyart-night / keyart-hall                                                                           | 圖片 | `apps/web/public/club/`          | 既有                                | 既有       | 既有    | —      | —     | —   | —           | 既有 |

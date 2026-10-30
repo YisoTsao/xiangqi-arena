@@ -1,8 +1,8 @@
 'use client';
 
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import type { ThreeEvent } from '@react-three/fiber';
-import { Object3D, type InstancedMesh } from 'three';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { Object3D, type AmbientLight, type InstancedMesh, type PointLight } from 'three';
 import { Bake } from './Bake';
 import { Character, A_LE_OUTFIT } from './Character';
 import {
@@ -27,7 +27,9 @@ import {
 } from './layout';
 import { Glow, Lantern, LightPool, Plant, Rounded, Sign, Wood, useNeon, useQuality } from './props';
 import { CLUB } from './signs';
-import { felt, retroTile, shoji, terrazzo, tiled, wallpaper, woodPlanks } from './textures';
+import { usePbr } from './pbr';
+import { transition } from './store';
+import { felt, shoji, tiled } from './textures';
 
 const WAINSCOT = 1.1;
 const H = HALL.height;
@@ -42,8 +44,8 @@ const span = (b: Box): [number, number] => [b.maxX - b.minX, b.maxZ - b.minZ];
 // ── 地板與牆 ───────────────────────────────────────────
 
 function Floor() {
-  const wood = useMemo(() => tiled(woodPlanks(), W / 3, (D - FOYER_DEPTH) / 3), []);
-  const stone = useMemo(() => tiled(terrazzo(), W / 2.5, FOYER_DEPTH / 2.5), []);
+  const wood = usePbr('wood_floor', [W, D - FOYER_DEPTH], 1.2);
+  const stone = usePbr('terrazzo_floor', [W, FOYER_DEPTH], 1.5);
   return (
     <group>
       {/* 牌桌區：木地板 */}
@@ -53,12 +55,12 @@ function Floor() {
         receiveShadow
       >
         <planeGeometry args={[W, D - FOYER_DEPTH]} />
-        <meshStandardMaterial map={wood} roughness={0.62} />
+        <meshStandardMaterial {...wood} />
       </mesh>
       {/* 玄關：磨石子 */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.006, -FOYER_DEPTH / 2]} receiveShadow>
         <planeGeometry args={[W, FOYER_DEPTH]} />
-        <meshStandardMaterial map={stone} roughness={0.5} />
+        <meshStandardMaterial {...stone} />
       </mesh>
       {/* 門口地墊 */}
       <Rounded
@@ -93,22 +95,19 @@ function WallPanel({
   ry: number;
   height?: number;
 }) {
-  const tile = useMemo(() => tiled(retroTile(), length / 1.2, WAINSCOT / 1.2), [length]);
-  const paper = useMemo(
-    () => tiled(wallpaper(), length / 1.6, Math.max(0.1, height - WAINSCOT) / 1.6),
-    [length, height],
-  );
   const low = Math.min(WAINSCOT, height);
+  const tile = usePbr('wall_tile', [length, low], 0.6);
+  const paper = usePbr('wallpaper', [length, Math.max(0.1, height - WAINSCOT)], 0.8);
   return (
     <group position={position} rotation-y={ry}>
       <mesh position-y={low / 2} receiveShadow>
         <boxGeometry args={[length, low, 0.3]} />
-        <meshStandardMaterial map={tile} roughness={0.45} />
+        <meshStandardMaterial {...tile} />
       </mesh>
       {height > WAINSCOT && (
         <mesh position-y={WAINSCOT + (height - WAINSCOT) / 2} receiveShadow>
           <boxGeometry args={[length, height - WAINSCOT, 0.3]} />
-          <meshStandardMaterial map={paper} roughness={0.85} />
+          <meshStandardMaterial {...paper} />
         </mesh>
       )}
       <Wood
@@ -916,6 +915,77 @@ function Decor() {
   );
 }
 
+/**
+ * 室內燈光（燈一直亮，不隨時段變暗）。
+ *
+ * 光源數量固定、一直掛著：進出門時只改亮度，不增減光源，所以不會讓所有材質重新編譯 shader
+ * （以前進門那一格會卡一下、畫面閃一次）。桌燈從街上透過 1F 櫥窗也看得到暖光；
+ * 會漏到騎樓的入口補光、環境光與窗光只在室內（transition.inside）時亮起。
+ * 低畫質只點前排三盞桌燈。
+ */
+function HallLights() {
+  const quality = useQuality();
+  const neon = useNeon();
+  const ambient = useRef<AmbientLight>(null);
+  const entrance = useRef<PointLight>(null);
+  const windows = useRef<PointLight[]>([]);
+  const night = neon > 0.5;
+  useFrame(() => {
+    const m = transition.inside;
+    if (ambient.current) ambient.current.intensity = 0.4 * m;
+    if (entrance.current) entrance.current.intensity = 2.2 * m;
+    for (const w of windows.current) if (w) w.intensity = (night ? 1.6 : 1.8) * m;
+  });
+  return (
+    <group>
+      {/* 室內的暖色環境光：屋頂擋住天光後，暗處也保持看得清楚 */}
+      <ambientLight ref={ambient} color="#ffd9a8" intensity={0} />
+      {TABLES.map(([x, z], i) =>
+        quality !== 'low' || i < 3 ? (
+          <pointLight
+            key={i}
+            position={[x, 1.9, z]}
+            color="#ffc878"
+            intensity={3.8}
+            distance={4.2}
+            decay={1.6}
+          />
+        ) : null,
+      )}
+      <pointLight
+        position={[(COUNTER.minX + COUNTER.maxX) / 2 - 0.5, 2.2, -4.5]}
+        color="#ffd59a"
+        intensity={2.6}
+        distance={4.5}
+        decay={1.6}
+      />
+      <pointLight
+        ref={entrance}
+        position={[-1, 3.2, -1.4]}
+        color="#ffd59a"
+        intensity={0}
+        distance={8}
+        decay={1.4}
+      />
+      {/* 窗光：後牆和紙窗透進來的光，夜晚偏冷藍、白天暖白，和桌燈的琥珀色分開 */}
+      {quality !== 'low' &&
+        [-3, 3].map((x, i) => (
+          <pointLight
+            key={x}
+            ref={(l) => {
+              if (l) windows.current[i] = l;
+            }}
+            position={[x, 2, HALL.minZ + 0.8]}
+            color={night ? '#9cc4ff' : '#fff1d6'}
+            intensity={0}
+            distance={5}
+            decay={1.6}
+          />
+        ))}
+    </group>
+  );
+}
+
 /** 1F 麻將館室內（燈一直亮，不隨時段變暗） */
 export function MahjongHall({
   onSelect,
@@ -947,42 +1017,7 @@ export function MahjongHall({
       <group position={[A_LE[0], 0, A_LE[1]]} rotation-y={-Math.PI / 2} onClick={pick('a-le')}>
         <Character outfit={A_LE_OUTFIT} />
       </group>
-      {/*
-        室內燈只在角色進門後才掛上（室外看不到室內，省下每個材質的光源計算）。
-        主光是各桌吊燈，低畫質只點前排三盞；另有櫃台燈與入口補光。
-      */}
-      {inside && (
-        <group>
-          {/* 室內的暖色環境光：屋頂擋住天光後，暗處也保持看得清楚 */}
-          <ambientLight color="#ffd9a8" intensity={0.55} />
-          {TABLES.map(([x, z], i) =>
-            quality !== 'low' || i < 3 ? (
-              <pointLight
-                key={i}
-                position={[x, 1.9, z]}
-                color="#ffc878"
-                intensity={3.2}
-                distance={4.2}
-                decay={1.6}
-              />
-            ) : null,
-          )}
-          <pointLight
-            position={[(COUNTER.minX + COUNTER.maxX) / 2 - 0.5, 2.2, -4.5]}
-            color="#ffd59a"
-            intensity={2.6}
-            distance={4.5}
-            decay={1.6}
-          />
-          <pointLight
-            position={[-1, 3.2, -1.4]}
-            color="#ffd59a"
-            intensity={2.2}
-            distance={8}
-            decay={1.4}
-          />
-        </group>
-      )}
+      <HallLights />
     </group>
   );
 }

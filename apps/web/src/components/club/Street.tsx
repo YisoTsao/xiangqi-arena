@@ -1065,7 +1065,8 @@ export function Street({ inside }: { inside: boolean }) {
           <StreetLamp key={x} x={x} z={z} />
         ))}
         {!inside && <LanternString />}
-        {quality !== 'low' && <PowerLines />}
+        {/* 室內鏡頭高度剛好在電線高度，進門就藏起來，免得一條黑線橫過畫面 */}
+        {quality !== 'low' && !inside && <PowerLines />}
         {SCOOTERS.map(([x, z], i) => (
           <Placed key={x} id="PROP_scooter" at={[x, z]}>
             <Scooter x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />
