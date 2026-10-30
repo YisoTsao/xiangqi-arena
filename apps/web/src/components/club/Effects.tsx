@@ -16,7 +16,8 @@ import { useNeon, useQuality } from './props';
 /**
  * 後處理（r3f-game-dev-spec §5.4）：輕微 Bloom 讓霓虹與燈泡發光、AO 讓家具貼地、
  * ACES 色調映射 + 微調飽和度做出暖色手繪感、暗角收邊。
- * 低畫質整個關掉（改用 renderer 的色調映射），中畫質不跑 AO。
+ * 低畫質整個關掉（改用 renderer 的色調映射），中畫質不做 AO（以前是強度 0 但照樣算一次，白花成本，也會在手機上閃爍）。
+ * Bloom 門檻設在 HDR 亮度 0.95：只有自發光的招牌、燈泡、燈籠會暈開，被燈照亮的米白牆面不會泛白。
  */
 export function Effects() {
   const quality = useQuality();
@@ -24,16 +25,16 @@ export function Effects() {
   if (quality === 'low') return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
-      {/* 中畫質（手機）不跑 AO：半解析度 AO 在行動 GPU 上會逐格閃爍，強度本來也是 0 */}
-      {quality === 'high' ? (
-        <N8AO aoRadius={0.6} intensity={2.2} distanceFalloff={0.6} halfRes color="#2a1a14" />
-      ) : (
-        <></>
-      )}
+      {/* 中畫質（手機）不跑 AO：半解析度 AO 在行動 GPU 上會逐格閃爍 */}
+      <>
+        {quality === 'high' && (
+          <N8AO aoRadius={0.6} intensity={1.8} distanceFalloff={0.6} halfRes color="#2a1a14" />
+        )}
+      </>
       <Bloom
         mipmapBlur
-        luminanceThreshold={0.85}
-        luminanceSmoothing={0.2}
+        luminanceThreshold={0.95}
+        luminanceSmoothing={0.25}
         intensity={0.55 + neon * 0.5}
         radius={0.7}
       />

@@ -12,8 +12,10 @@ import {
   type DirectionalLight,
   type Group,
   type HemisphereLight,
+  type PerspectiveCamera,
 } from 'three';
 import { Character, PLAYER_OUTFIT, animateWalk } from './Character';
+import { useInteriorWindowClock } from './InteriorWindow';
 import { gameHourAt, lightingAt } from './clock';
 import { Effects } from './Effects';
 import {
@@ -107,11 +109,88 @@ function SkyDome({ top, bottom }: { top: Color; bottom: Color }) {
   );
 }
 
+/** 太陽陰影相機的半寬（公尺） */
+const SHADOW_HALF = 15;
+
+/**
+ * 依時段重建的環境貼圖（PMREM）：天空、地平線、兩側店面的暖光帶與霓虹色塊。
+ * PBR 材質的反射與漫射環境光都從這裡來，所以積水、櫥窗玻璃、金屬招牌框映出的是「這條街此刻」的顏色，
+ * 不是一張不相干的 HDR。只在時段明顯改變時重建（約 1/20 霓虹亮度一階），平常不花成本。
+ */
+function SceneProbe({ sky, horizon, neon }: { sky: Color; horizon: Color; neon: number }) {
+  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}`;
+  return (
+    // 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到
+    <Environment
+      key={key}
+      resolution={128}
+      frames={1}
+      environmentIntensity={0.6 * (1 - 0.5 * neon)}
+    >
+      <mesh scale={60}>
+        <sphereGeometry args={[1, 32, 16]} />
+        <meshBasicMaterial color={horizon} side={BackSide} toneMapped={false} />
+      </mesh>
+      <Lightformer
+        form="rect"
+        color={sky}
+        intensity={1.4}
+        position={[0, 25, 0]}
+        rotation-x={Math.PI / 2}
+        scale={[80, 80, 1]}
+      />
+      {/* 俱樂部這一側的騎樓暖光（從街上看在 -z） */}
+      <Lightformer
+        color="#ffb870"
+        intensity={0.4 + neon * 2.4}
+        position={[0, 1.6, -7]}
+        scale={[50, 2.4, 1]}
+      />
+      {/* 對面店家（鏡頭背後）的燈 */}
+      <Lightformer
+        color="#ffd2a0"
+        intensity={0.2 + neon * 1.2}
+        position={[0, 1.8, 12]}
+        rotation-y={Math.PI}
+        scale={[50, 2, 1]}
+      />
+      {neon > 0.05 && (
+        <>
+          <Lightformer
+            color="#E95B4B"
+            intensity={neon * 3}
+            position={[-3, 4.5, -6]}
+            scale={[7, 1.6, 1]}
+          />
+          <Lightformer
+            color="#8552B8"
+            intensity={neon * 2}
+            position={[5, 8, -6]}
+            scale={[3, 1, 1]}
+          />
+          <Lightformer
+            color="#5CC2C9"
+            intensity={neon * 1.2}
+            position={[-12, 3, -6]}
+            scale={[3, 1, 1]}
+          />
+        </>
+      )}
+    </Environment>
+  );
+}
+
+function InteriorClock({ sky }: { sky: Color }) {
+  useInteriorWindowClock(sky);
+  return null;
+}
+
 function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const scene = useThree((s) => s.scene);
   const quality = useQuality();
   const inside = useClub((s) => s.inside);
   const sun = useRef<DirectionalLight>(null);
+  const sunDir = useRef(new Vector3(0, 1, 0));
   const hemi = useRef<HemisphereLight>(null);
   const [neon, setNeon] = useState(1);
   const [sky, setSky] = useState(() => ({ top: new Color(), bottom: new Color() }));
@@ -128,10 +207,10 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
       const dim = inside ? 0.22 : 1;
       if (sun.current) {
         const c = Math.cos(l.sunElevation);
-        sun.current.position.set(
-          c * Math.cos(l.sunAzimuth) * 30,
-          Math.sin(l.sunElevation) * 30,
-          c * Math.sin(l.sunAzimuth) * 30,
+        sunDir.current.set(
+          c * Math.cos(l.sunAzimuth),
+          Math.sin(l.sunElevation),
+          c * Math.sin(l.sunAzimuth),
         );
         sun.current.color.setRGB(...l.sun);
         sun.current.intensity = l.sunIntensity * dim;
@@ -149,6 +228,18 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     return () => clearInterval(id);
   }, [hour, scene, inside]);
 
+  // 陰影相機跟著角色走（以 texel 為單位對齊，移動時陰影邊緣不閃），範圍小一點換取較細的陰影
+  useFrame(() => {
+    const l = sun.current;
+    if (!l) return;
+    const texel = (SHADOW_HALF * 2) / l.shadow.mapSize.x;
+    const cx = Math.round(player.pos[0] / texel) * texel;
+    const cz = Math.round((player.pos[1] - 2) / texel) * texel;
+    l.target.position.set(cx, 0, cz);
+    l.position.set(cx, 0, cz).addScaledVector(sunDir.current, 30);
+    l.target.updateMatrixWorld();
+  });
+
   const shadows = quality !== 'low';
   return (
     <NeonContext.Provider value={neon}>
@@ -162,21 +253,15 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
         shadow-mapSize={quality === 'high' ? [2048, 2048] : [1024, 1024]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
-        shadow-camera-left={-18}
-        shadow-camera-right={18}
-        shadow-camera-top={18}
-        shadow-camera-bottom={-18}
+        shadow-camera-left={-SHADOW_HALF}
+        shadow-camera-right={SHADOW_HALF}
+        shadow-camera-top={SHADOW_HALF}
+        shadow-camera-bottom={-SHADOW_HALF}
         shadow-camera-far={80}
       />
       <hemisphereLight ref={hemi} />
-      {/* 只給金屬與漆面一點反光（招牌框、鐵捲門、電梯門），不載入外部 HDR */}
-      {quality !== 'low' && (
-        <Environment resolution={64} frames={1} environmentIntensity={0.35}>
-          <Lightformer intensity={1.5} position={[0, 6, 8]} scale={[16, 6, 1]} />
-          <Lightformer intensity={1} color="#F2B552" position={[-8, 3, -2]} scale={[6, 4, 1]} />
-          <Lightformer intensity={0.6} color="#9cc4ff" position={[8, 4, -6]} scale={[6, 4, 1]} />
-        </Environment>
-      )}
+      {quality !== 'low' && <SceneProbe sky={sky.top} horizon={sky.bottom} neon={neon} />}
+      <InteriorClock sky={sky.top} />
       {children}
     </NeonContext.Provider>
   );
@@ -296,9 +381,35 @@ function Player() {
   );
 }
 
-/** 開場鏡頭：從對面人行道仰看整棟樓、燈箱與直立招牌 */
-const TITLE_POS = new Vector3(-5, 2.1, 15.5);
-const TITLE_LOOK = new Vector3(0.8, 5.4, 0);
+/**
+ * 開場定鏡（ART_BIBLE_LOBBY §6.1）：站在對面人行道，前景是馬路、中景是俱樂部與左右店面、遠景是城市剪影。
+ * 標題選單在桌機佔左側、在直向手機佔下半部，所以用 view offset 把畫面主體推到另一側，
+ * 讓主招牌、直立招牌與入口完整落在選單之外，而不是把鏡頭轉歪。
+ */
+interface TitleShot {
+  pos: Vector3;
+  look: Vector3;
+  fov: number;
+  /** 畫面主體往右（+）／往上（+）推移的比例（相對畫面寬、高） */
+  shiftX: number;
+  shiftY: number;
+}
+const TITLE_WIDE: TitleShot = {
+  pos: new Vector3(-3.2, 1.6, 23),
+  look: new Vector3(1.2, 5.1, 0),
+  fov: 40,
+  shiftX: 0.17,
+  shiftY: 0,
+};
+const TITLE_TALL: TitleShot = {
+  pos: new Vector3(0.6, 1.5, 22),
+  look: new Vector3(1.4, 5.6, 0),
+  fov: 52,
+  shiftX: 0,
+  shiftY: 0.24,
+};
+const titleShot = (aspect: number) => (aspect < 0.9 ? TITLE_TALL : TITLE_WIDE);
+const TITLE_POS = TITLE_WIDE.pos;
 const INTRO_SECONDS = 2;
 
 /**
@@ -310,10 +421,35 @@ const FOLLOW = {
   inside: { dist: 6.4, height: 6.6, lookAhead: 0.9 },
 } as const;
 
+const FOLLOW_FOV = 40;
+
+/** 依開場構圖的比例 m 設定 fov 與 view offset；沒變就不重算投影矩陣 */
+function applyFraming(
+  camera: PerspectiveCamera,
+  size: { width: number; height: number },
+  shot: TitleShot,
+  m: number,
+) {
+  const fov = FOLLOW_FOV + (shot.fov - FOLLOW_FOV) * m;
+  const ox = -shot.shiftX * size.width * m;
+  const oy = shot.shiftY * size.height * m;
+  const v = camera.view;
+  const same =
+    Math.abs(camera.fov - fov) < 1e-3 &&
+    (m < 1e-3 ? !v || !v.enabled : !!v && v.enabled && v.offsetX === ox && v.offsetY === oy);
+  if (same) return;
+  camera.fov = fov;
+  if (m < 1e-3) camera.clearViewOffset();
+  else camera.setViewOffset(size.width, size.height, ox, oy, size.width, size.height);
+  camera.updateProjectionMatrix();
+}
+
 function CameraRig() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
-  const look = useRef(TITLE_LOOK.clone());
+  const look = useRef(TITLE_WIDE.look.clone());
+  /** 0 = 跟隨鏡頭、1 = 開場構圖（view offset 與 fov 依它內插） */
+  const titleMix = useRef(1);
   const intro = useRef<{ t: number; fromPos: Vector3; fromLook: Vector3 } | null>(null);
   const tmpPos = useRef(new Vector3());
   const tmpLook = useRef(new Vector3());
@@ -334,12 +470,14 @@ function CameraRig() {
       pz + cy * f.dist * far,
     );
     const followLook = tmpLook.current.set(px - sy * f.lookAhead, 0.9, pz - cy * f.lookAhead);
+    const shot = titleShot(size.width / Math.max(1, size.height));
 
     if (mode === 'title') {
       intro.current = null;
       const sway = Math.sin(state.clock.elapsedTime * 0.15) * 0.6;
-      camera.position.set(TITLE_POS.x + sway, TITLE_POS.y, TITLE_POS.z);
-      look.current.copy(TITLE_LOOK);
+      camera.position.set(shot.pos.x + sway, shot.pos.y, shot.pos.z);
+      look.current.copy(shot.look);
+      titleMix.current = 1;
     } else if (mode === 'intro') {
       if (!intro.current) {
         intro.current = { t: 0, fromPos: camera.position.clone(), fromLook: look.current.clone() };
@@ -350,6 +488,7 @@ function CameraRig() {
       const e = it.t < 0.5 ? 4 * it.t ** 3 : 1 - (-2 * it.t + 2) ** 3 / 2;
       camera.position.lerpVectors(it.fromPos, followPos, e);
       look.current.lerpVectors(it.fromLook, followLook, e);
+      titleMix.current = 1 - e;
       if (it.t >= 1) {
         intro.current = null;
         useClub.getState().setMode('walk');
@@ -358,8 +497,10 @@ function CameraRig() {
       const k = 1 - Math.exp(-dt * 5);
       camera.position.lerp(followPos, k);
       look.current.lerp(followLook, k);
+      titleMix.current = 0;
     }
     camera.lookAt(look.current);
+    applyFraming(camera as PerspectiveCamera, size, shot, titleMix.current);
   });
   return null;
 }
@@ -455,7 +596,7 @@ export function ClubScene({ hour, quality }: { hour?: number; quality: Quality }
         stencil: false,
       }}
       // near 不設太小：手機的深度緩衝精度低，貼在地面與牆上的招牌、標線才不會深度打架而閃爍
-      camera={{ fov: 40, near: 0.5, far: 300, position: TITLE_POS.toArray() }}
+      camera={{ fov: FOLLOW_FOV, near: 0.5, far: 300, position: TITLE_POS.toArray() }}
       // 手機網址列伸縮時不要每一格都重配畫布與後處理緩衝（重配那一格會清成空白）
       resize={{ debounce: 150 }}
       style={{ touchAction: 'none' }}
