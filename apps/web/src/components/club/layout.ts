@@ -241,8 +241,6 @@ export function cardChairsOf([x, z]: Vec2): Vec2[] {
 /** 服務台（小葵站在後面）、棋具櫃、窗邊沙發 */
 export const HOST_DESK = box(-1.5, 1.5, -10.9, -10.3);
 export const HOST: Vec2 = [0, -11.4];
-/** 站在 2 號棋桌旁觀棋的老伯（觀棋不語） */
-export const WATCHER: Vec2 = [-1.75, -2.75];
 export const GAME_SHELF = box(-6.4, -3.6, -11.95, -11.5);
 export const SOFA_2F = box(-3, -0.6, -0.75, -0.25);
 export const PLANTS_2F: readonly Vec2[] = [
@@ -271,7 +269,6 @@ export const COLLIDERS_2F: readonly Box[] = [
   ]),
   HOST_DESK,
   box(HOST[0] - 0.3, HOST[0] + 0.3, HOST[1] - 0.3, HOST[1] + 0.3),
-  centered(WATCHER[0], WATCHER[1], 0.6, 0.6),
   GAME_SHELF,
   SOFA_2F,
   ...PLANTS_2F.map((p) => centered(p[0], p[1], 0.6, 0.6)),
@@ -305,7 +302,7 @@ export const INTERACTABLES: readonly Interactable[] = [
     kind: 'table',
     at: t,
     radius: 1.9,
-    label: `入座 ${i + 1} 號桌，打一將東風圈`,
+    label: `入座 ${i + 1} 號桌，四人打一將東風圈`,
     approach: standPointOf(t),
   })),
   {
@@ -350,7 +347,7 @@ export const INTERACTABLES_2F: readonly Interactable[] = [
     kind: 'cards',
     at: t,
     radius: 2,
-    label: `入座 ${i + 1} 號牌桌，和電腦打大老二`,
+    label: `入座 ${i + 1} 號牌桌，四人大老二`,
     approach: [t[0], t[1] + 1.75],
   })),
   {

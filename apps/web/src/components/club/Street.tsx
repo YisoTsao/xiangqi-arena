@@ -288,7 +288,7 @@ function BulbFrame({ size, position }: { size: [number, number]; position: V3 })
   );
 }
 
-function ClubFacade({ inside }: { inside: boolean }) {
+function ClubFacade() {
   const quality = useQuality();
   const top = FH * 4;
   const wall = usePbr('facade_tile', [18.6, top - FH], 1);
@@ -298,7 +298,7 @@ function ClubFacade({ inside }: { inside: boolean }) {
     { f: 3, light: '#ffd8a0', label: '4F 包廂', color: CLUB.wood },
   ];
   return (
-    <group visible={!inside}>
+    <group>
       {/* 1F 正面：門兩側是大片櫥窗，木框分格，看得到裡面的暖光 */}
       {[
         [HALL.minX - 0.3, DOOR.minX],
@@ -719,13 +719,14 @@ function StreetLamp({ x, z }: { x: number; z: number }) {
   spot.intensity = neon * 38;
   return (
     <group position={[x, 0, z]}>
-      {quality !== 'low' && neon > 0.05 && (
+      {/* 聚光燈白天也掛著（亮度 0）：天黑時才加光源，所有材質都得重新編譯 shader，畫面會卡一下、閃一下 */}
+      {quality !== 'low' && (
         <>
           <primitive object={spot} />
           <primitive object={spot.target} />
-          <LampCone position={[0, 3.75, -0.62]} />
         </>
       )}
+      {quality !== 'low' && neon > 0.05 && <LampCone position={[0, 3.75, -0.62]} />}
       <AssetSlot id="PROP_street_lamp">
         <mesh position-y={2.1} castShadow>
           <cylinderGeometry args={[0.06, 0.1, 4.2, 12]} />
@@ -1043,19 +1044,18 @@ const SHOP_SLOTS: AssetId[] = [
 ];
 
 /** 街口：馬路、鄰居店面、遠景、路燈、電線、機車、郵筒、販賣機，加上俱樂部外觀 */
-export function Street({ inside }: { inside: boolean }) {
+export function Street() {
   const quality = useQuality();
   const rain = useClub((s) => s.weather === 'rain');
+  // 室內時整條街由 ClubScene 的 Outdoors 藏起來（光源數量不變），這裡不用依室內外增減物件
   return (
     <>
-      {rain && <RainyStreet inside={inside} />}
-      <Bake deps={[inside, quality, rain]}>
+      {rain && <RainyStreet />}
+      <Bake deps={[quality, rain]}>
         <Ground rain={rain} />
-        <group visible={!inside}>
-          <AssetSlot id="ARCH_club_facade">
-            <ClubFacade inside={inside} />
-          </AssetSlot>
-        </group>
+        <AssetSlot id="ARCH_club_facade">
+          <ClubFacade />
+        </AssetSlot>
         {SHOPS.map((s, i) => (
           <Placed key={s.x0} id={SHOP_SLOTS[i]!} at={[(s.x0 + s.x1) / 2, 0]}>
             <Shophouse s={s} />
@@ -1065,9 +1065,8 @@ export function Street({ inside }: { inside: boolean }) {
         {STREET_LAMPS.map(([x, z]) => (
           <StreetLamp key={x} x={x} z={z} />
         ))}
-        {!inside && <LanternString />}
-        {/* 室內鏡頭高度剛好在電線高度，進門就藏起來，免得一條黑線橫過畫面 */}
-        {quality !== 'low' && !inside && <PowerLines />}
+        <LanternString />
+        {quality !== 'low' && <PowerLines />}
         {SCOOTERS.map(([x, z], i) => (
           <Placed key={x} id="PROP_scooter" at={[x, z]}>
             <Scooter x={x} z={z} color={[CLUB.cyan, CLUB.cream, CLUB.neonRed][i % 3]!} />

@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { randomAvatarColor } from './avatarColors';
 import {
+  CAMERA_YAW,
   SPAWN,
   findPath,
   interactablesOf,
@@ -34,6 +35,16 @@ export const player = {
   running: false,
   /** 角色衣服的顏色（每開一個視窗隨機一個；多人連線時同步給別人） */
   color: sessionColor(),
+};
+
+/**
+ * 自由視角的跟隨鏡頭：拖曳畫面轉 yaw／pitch，滾輪或雙指縮放改 dist。
+ * 方向鍵依 yaw 轉換（W 永遠是「往畫面裡面走」）。
+ */
+export const orbit = {
+  yaw: CAMERA_YAW.outside as number,
+  pitch: 0.55,
+  dist: 8.5,
 };
 
 /** 同一個分頁重新整理後保持同一個顏色；新開視窗就是新的角色 */
@@ -169,4 +180,82 @@ export function walkToNearestTable(): void {
     }
   }
   if (best) walkTo(best.approach);
+}
+
+/**
+ * 重新整理後留在原地：目前位置、樓層、面向（和坐著的桌子）存在 sessionStorage。
+ * 只在同一個分頁有效：另開視窗是另一個角色，從街口開始。
+ */
+const SPOT_KEY = 'xa:clubSpot';
+
+export interface SavedSpot {
+  floor: Floor;
+  pos: Vec2;
+  yaw: number;
+  inside: boolean;
+  seatedAt: string | null;
+  /** 鏡頭角度，重新整理後視角也一樣 */
+  cam?: [number, number, number];
+}
+
+/** 按「離開」後到換頁之前不要再存回去 */
+let spotCleared = false;
+
+export function saveSpot(): void {
+  if (spotCleared) return;
+  const s = useClub.getState();
+  // 標題與推鏡途中不算「在場內」；換樓層途中位置還沒換好，等淡入完成再存
+  if (s.mode === 'title' || s.mode === 'intro' || s.mode === 'travel') return;
+  const spot: SavedSpot = {
+    floor: s.floor,
+    pos: [Math.round(player.pos[0] * 100) / 100, Math.round(player.pos[1] * 100) / 100],
+    yaw: Math.round(player.yaw * 100) / 100,
+    inside: s.inside,
+    seatedAt: s.mode === 'seated' ? s.seatedAt : null,
+    cam: [orbit.yaw, orbit.pitch, orbit.dist].map((x) => Math.round(x * 1000) / 1000) as [
+      number,
+      number,
+      number,
+    ],
+  };
+  try {
+    window.sessionStorage.setItem(SPOT_KEY, JSON.stringify(spot));
+  } catch {
+    /* 無痕或停用儲存空間：重新整理就回到街口 */
+  }
+}
+
+export function clearSpot(): void {
+  spotCleared = true;
+  try {
+    window.sessionStorage.removeItem(SPOT_KEY);
+  } catch {
+    /* 同上 */
+  }
+}
+
+export function loadSpot(): SavedSpot | null {
+  spotCleared = false;
+  try {
+    const raw = window.sessionStorage.getItem(SPOT_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<SavedSpot>;
+    const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x);
+    if (v.floor !== 1 && v.floor !== 2) return null;
+    if (!Array.isArray(v.pos) || !num(v.pos[0]) || !num(v.pos[1]) || !num(v.yaw)) return null;
+    if (Math.abs(v.pos[0]!) > 200 || Math.abs(v.pos[1]!) > 200) return null;
+    return {
+      floor: v.floor,
+      pos: [v.pos[0]!, v.pos[1]!],
+      yaw: v.yaw!,
+      inside: v.inside === true,
+      seatedAt: typeof v.seatedAt === 'string' ? v.seatedAt : null,
+      cam:
+        Array.isArray(v.cam) && v.cam.length === 3 && v.cam.every(num)
+          ? (v.cam as [number, number, number])
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
 }

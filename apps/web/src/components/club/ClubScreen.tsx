@@ -14,9 +14,6 @@ import {
   X,
 } from 'lucide-react';
 import { isWebGLAvailable, recommendedQuality } from '@xiangqi-arena/game-renderer';
-import { BigTwoPracticeScreen } from '../bigtwo/BigTwoPracticeScreen';
-import { LocalScreen } from '../LocalScreen';
-import { MahjongPracticeScreen } from '../mahjong/MahjongPracticeScreen';
 import { Button } from '../ui/button';
 import { DAY_PHASE_LABELS, dayPhaseOf, formatGameTime, gameHourAt } from './clock';
 import {
@@ -28,9 +25,19 @@ import {
   type Interactable,
 } from './layout';
 import { SIDE_STREET_X } from './district';
-import { TRAVEL_FADE_MS, player, useClub, walkToNearestTable } from './store';
+import {
+  TRAVEL_FADE_MS,
+  clearSpot,
+  loadSpot,
+  orbit,
+  player,
+  saveSpot,
+  useClub,
+  walkToNearestTable,
+} from './store';
 import { ChatPanel, OnlineCount } from './ChatPanel';
 import { PresenceOverlay } from './PresenceOverlay';
+import { ClubTableScreen } from './ClubTableScreen';
 import { isTableFull, joinClubLobby, seatedAt, useClubNet } from './net';
 import { clubTableCapacity } from '@xiangqi-arena/game-protocol';
 import { useSettings } from '@/lib/settings';
@@ -50,9 +57,9 @@ const A_LE_LINES = [
 
 const HOST_LINES = [
   '歡迎來到牌桌館！左邊下棋，右邊打牌，隨便坐。',
-  '棋桌是兩人同一台裝置對弈，找朋友來一盤吧。',
-  '牌桌的三位老客人都是電腦，打大老二不會累。',
-  '觀棋不語真君子，阿伯看了一下午都沒出聲。',
+  '棋桌找個對手坐對面，一人一邊下。',
+  '大老二要湊滿四個人，象棋兩個人就能開。',
+  '桌子沒人的話，你先坐下就是開桌，等其他人來坐滿就開打。',
   '3F 電玩網咖還在整修，電梯先只停 1F、2F。',
 ];
 
@@ -66,6 +73,7 @@ const SPAWNS: Record<string, { pos: [number, number]; yaw: number; floor?: Floor
   '2f': { pos: [0.2, -6], yaw: Math.PI, floor: 2 },
   '2f-chess': { pos: [-4.4, -1.6], yaw: Math.PI, floor: 2 },
   '2f-cards': { pos: [3, -1.6], yaw: Math.PI, floor: 2 },
+  'chess-1': { pos: [-6, -1.95], yaw: Math.PI, floor: 2 },
   // 樂町街區：廣場、後巷、東側街、擴建預定地
   plaza: { pos: [0, 18], yaw: 0 },
   alley: { pos: [0, -16], yaw: Math.PI },
@@ -244,9 +252,9 @@ function Prompt({ it, onAct }: { it: Interactable; onAct: () => void }) {
         E
       </kbd>
       <span data-testid="club-prompt">{it.label}</span>
-      {seat && count > 0 && (
+      {seat && (
         <span data-testid="club-prompt-seats" className="text-xs text-[#F2DAB6]/70">
-          {count}/{cap} 人
+          {count > 0 ? `${count}/${cap} 人` : '空桌，坐下就開桌'}
         </span>
       )}
       <Button
@@ -298,8 +306,38 @@ export function ClubScreen() {
       player.yaw = spawn.yaw;
       const floor = spawn.floor ?? 1;
       useClub.setState({ mode: 'walk', inside: isInside(spawn.pos, floor), floor });
+    } else {
+      // 重新整理：回到剛才站的地方（坐著的話直接回到那張桌子）
+      const spot = loadSpot();
+      if (spot) {
+        player.pos = [...spot.pos];
+        player.yaw = spot.yaw;
+        if (spot.cam) {
+          const [y, p, d] = spot.cam;
+          orbit.yaw = y;
+          orbit.pitch = Math.max(0.06, Math.min(1.38, p));
+          orbit.dist = Math.max(2.2, Math.min(22, d));
+        }
+        useClub.setState({
+          mode: 'walk',
+          floor: spot.floor,
+          inside: isInside(spot.pos, spot.floor),
+        });
+        const table = ALL_INTERACTABLES.find((x) => x.id === spot.seatedAt);
+        if (table && SEAT_KINDS.has(table.kind)) useClub.getState().sit(table.id);
+      }
     }
   }, [reset]);
+
+  // 位置每秒存一次，關閉或重新整理前再存一次
+  useEffect(() => {
+    const id = setInterval(saveSpot, 1000);
+    window.addEventListener('pagehide', saveSpot);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('pagehide', saveSpot);
+    };
+  }, []);
 
   const pickLine = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)]!;
 
@@ -420,6 +458,7 @@ export function ClubScreen() {
             <Link
               href="/"
               data-testid="club-exit"
+              onClick={clearSpot}
               className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#24344D]/75 px-3 py-1 text-xs text-[#F2DAB6] backdrop-blur hover:bg-[#24344D]"
             >
               <LogOut className="size-3.5" /> 離開
@@ -484,13 +523,7 @@ export function ClubScreen() {
           data-testid="club-table"
           data-game={table.kind}
         >
-          {table.kind === 'cards' ? (
-            <BigTwoPracticeScreen onExit={leaveTable} />
-          ) : table.kind === 'chess' ? (
-            <LocalScreen initialMode={table.mode ?? 'classic'} onExit={leaveTable} />
-          ) : (
-            <MahjongPracticeScreen onExit={leaveTable} />
-          )}
+          <ClubTableScreen table={table} onExit={leaveTable} />
         </div>
       )}
     </div>

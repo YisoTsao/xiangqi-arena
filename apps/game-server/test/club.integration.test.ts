@@ -8,7 +8,12 @@ import {
   type ClubDenied,
   type ClubPlayer,
   type ClubState,
+  type ClubTableRoom,
   type ClubWelcome,
+  MSG,
+  PROTOCOL_VERSION,
+  RoomSnapshotSchema,
+  type RoomSnapshot,
 } from '@xiangqi-arena/game-protocol';
 import { createGameServer } from '../src/server';
 
@@ -145,6 +150,62 @@ describe('club lobby (integration)', () => {
     await ta.until(() => ta.of<{ id: string }>(CLUB_MSG.left).some((l) => l.id === bob!.id));
 
     await Promise.all([ra.leave(), rc.leave(), rd.leave()]);
+  });
+
+  it('opens one game room per table: the first sitter creates it, the rest join it', async () => {
+    const ra = await join(new Client(URL), 'Host');
+    const ta = track(ra);
+    await ta.until(() => ta.of(CLUB_MSG.welcome).length === 1);
+    ra.send(CLUB_MSG.seat, { tableId: 'table-3' });
+    await ta.until(() => ta.of<ClubTableRoom>(CLUB_MSG.table).some((t) => t.tableId === 'table-3'));
+    const code = ta.of<ClubTableRoom>(CLUB_MSG.table).find((t) => t.tableId === 'table-3')!.code!;
+    expect(code).toMatch(/^[A-Z0-9]{4,8}$/);
+
+    // 後來的人：welcome 裡就有這張桌子的房間代碼
+    const rb = await join(new Client(URL), 'Guest');
+    const tb = track(rb);
+    await tb.until(() => tb.of(CLUB_MSG.welcome).length === 1);
+    expect(tb.of<ClubWelcome>(CLUB_MSG.welcome)[0]!.tables?.['table-3']).toBe(code);
+
+    // 對局房間是麻將、還在等人（四人桌只有一人，不會開局）
+    const game = await new Client(URL).joinById(code, {
+      protocol: PROTOCOL_VERSION,
+      playerToken: 'host-token-0123456789',
+      name: 'Host',
+    });
+    const snaps: RoomSnapshot[] = [];
+    game.onMessage(MSG.snapshot, (raw: unknown) => snaps.push(RoomSnapshotSchema.parse(raw)));
+    game.onMessage('*', () => undefined);
+    await new Promise<void>((resolve, reject) => {
+      const t0 = Date.now();
+      const tick = () =>
+        snaps.length
+          ? resolve()
+          : Date.now() - t0 > 3000
+            ? reject(new Error('timeout'))
+            : setTimeout(tick, 20);
+      tick();
+    });
+    expect(snaps.at(-1)!.config.gameId).toBe('mahjong');
+    expect(snaps.at(-1)!.phase).toBe('lobby');
+    expect(snaps.at(-1)!.seats).toHaveLength(4);
+    await game.leave();
+
+    // 大家都站起來：桌子收掉，下一個人重新開桌
+    ra.send(CLUB_MSG.seat, { tableId: null });
+    await tb.until(() =>
+      tb.of<ClubTableRoom>(CLUB_MSG.table).some((t) => t.tableId === 'table-3' && t.code === null),
+    );
+    rb.send(CLUB_MSG.seat, { tableId: 'table-3' });
+    await tb.until(() =>
+      tb.of<ClubTableRoom>(CLUB_MSG.table).some((t) => t.tableId === 'table-3' && t.code !== null),
+    );
+    const next = tb
+      .of<ClubTableRoom>(CLUB_MSG.table)
+      .filter((t) => t.code)
+      .at(-1)!.code;
+    expect(next).not.toBe(code);
+    await Promise.all([ra.leave(), rb.leave()]);
   });
 
   it('keeps a color the window picked itself', async () => {

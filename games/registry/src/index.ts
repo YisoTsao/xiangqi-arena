@@ -1,5 +1,6 @@
 import type { AnyGameDefinition } from '@xiangqi-arena/game-core';
 import { bigTwoGame } from '@xiangqi-arena/games-big-two';
+import { mahjongGame } from '@xiangqi-arena/games-mahjong';
 import { xiangqiGame } from '@xiangqi-arena/games-xiangqi';
 
 /**
@@ -9,6 +10,7 @@ import { xiangqiGame } from '@xiangqi-arena/games-xiangqi';
 export const GAMES: Readonly<Record<string, AnyGameDefinition>> = {
   [xiangqiGame.id]: xiangqiGame,
   [bigTwoGame.id]: bigTwoGame,
+  [mahjongGame.id]: mahjongGame,
 };
 
 export const DEFAULT_GAME_ID = xiangqiGame.id;

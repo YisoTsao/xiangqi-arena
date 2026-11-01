@@ -12,6 +12,7 @@ import {
   type DirectionalLight,
   type Group,
   type HemisphereLight,
+  type Light,
   type PerspectiveCamera,
 } from 'three';
 import { Avatar } from './Avatar';
@@ -40,17 +41,8 @@ import { CardHall } from './CardHall';
 import { MahjongHall } from './MahjongHall';
 import { NeonContext, QualityContext, useQuality, type Quality } from './props';
 import { Street } from './Street';
-import { player, pointerGuard, transition, useClub, walkTo } from './store';
+import { orbit, player, pointerGuard, transition, useClub, walkTo } from './store';
 
-/**
- * 自由視角的跟隨鏡頭：拖曳畫面轉 yaw／pitch，滾輪或雙指縮放改 dist。
- * 方向鍵依 yaw 轉換（W 永遠是「往畫面裡面走」）。
- */
-export const orbit = {
-  yaw: CAMERA_YAW.outside as number,
-  pitch: 0.55,
-  dist: 8.5,
-};
 export const ORBIT_LIMITS = { minPitch: 0.06, maxPitch: 1.38, minDist: 2.2, maxDist: 22 } as const;
 
 function resetOrbit() {
@@ -138,6 +130,13 @@ function SkyDome({ top, bottom }: { top: Color; bottom: Color }) {
   );
 }
 
+/** 室內時牆外的背景：深色，不露出街景與天空 */
+const INDOOR_BG = new Color('#120d0b');
+
+/** 顏色分成每色 24 階，當重建環境貼圖的 key */
+const coarse = (c: Color) =>
+  `${Math.round(c.r * 24)},${Math.round(c.g * 24)},${Math.round(c.b * 24)};`;
+
 /** 太陽陰影相機的半寬（公尺） */
 const SHADOW_HALF = 15;
 
@@ -158,7 +157,8 @@ function SceneProbe({
   inside: boolean;
 }) {
   const floor = useClub((s) => s.floor);
-  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}${inside}${floor}`;
+  // 天色每 5 秒都會微微變：顏色取粗一點的階再當 key，免得每 5 秒就重建一次環境貼圖（每次重建都會頓一下）
+  const key = `${coarse(sky)}${coarse(horizon)}${neon}${inside}${floor}`;
   if (inside) return <HallProbe key={key} neon={neon} lamp={floor === 2 ? '#d8f0b0' : '#ffc878'} />;
   return (
     // 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到
@@ -271,8 +271,11 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const scene = useThree((s) => s.scene);
   const quality = useQuality();
   const inside = useClub((s) => s.inside);
+  const indoor = useClub((s) => s.inside || s.floor === 2);
   const rain = useClub((s) => s.weather === 'rain');
   const sun = useRef<DirectionalLight>(null);
+  /** 室外的背景色（霧色）；室內換成深色，牆外不露出天空 */
+  const outdoorBg = useRef(new Color());
   const sunDir = useRef(new Vector3(0, 1, 0));
   const hemi = useRef<HemisphereLight>(null);
   const [neon, setNeon] = useState(1);
@@ -292,7 +295,8 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
         fog.lerp(grey, 0.7);
         skyTop.lerp(grey.clone().multiplyScalar(0.75), 0.75);
       }
-      scene.background = fog;
+      // 背景直接用這個 Color 物件（室內時換成 INDOOR_BG，見下方 effect）
+      outdoorBg.current.copy(fog);
       // 室內時遠景淡一點，讓暖色牌桌區跳出來（[室外, 室內]）
       base.current.fog = rain
         ? { near: [18, 22], far: [62, 60] }
@@ -323,6 +327,10 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     const id = setInterval(apply, 5000);
     return () => clearInterval(id);
   }, [hour, scene, rain]);
+
+  useEffect(() => {
+    scene.background = indoor ? INDOOR_BG : outdoorBg.current;
+  }, [indoor, scene]);
 
   // 進出門：室外光與霧在約 0.6 秒內內插到室內值（屋頂擋住天光，剖面圖拿掉了屋頂，用降低室外光代替）
   useFrame((_, delta) => {
@@ -356,10 +364,13 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
   const shadows = quality !== 'low';
   return (
     <NeonContext.Provider value={neon}>
-      <SkyDome top={sky.top} bottom={sky.bottom} />
-      {neon > 0.4 && quality !== 'low' && !rain && (
-        <Stars radius={110} depth={10} count={900} factor={3} fade speed={0.4} />
-      )}
+      {/* 天空與星星沒有光源，室內直接藏起來即可 */}
+      <group visible={!indoor}>
+        <SkyDome top={sky.top} bottom={sky.bottom} />
+        {neon > 0.4 && quality !== 'low' && !rain && (
+          <Stars radius={110} depth={10} count={900} factor={3} fade speed={0.4} />
+        )}
+      </group>
       <directionalLight
         ref={sun}
         castShadow={shadows}
@@ -785,6 +796,45 @@ function CameraRig() {
   return null;
 }
 
+/** 室內時街景放到鏡頭看不到的圖層 */
+const HIDDEN_LAYER = 31;
+
+/**
+ * 室內看不到外面：把街口與街區的物件移到鏡頭不看的圖層，而不是 visible = false。
+ * three.js 不收集隱藏子樹裡的光源，光源數量一變，所有材質都要重新編譯 shader，
+ * 畫面會卡住、閃一下；這裡光源留在原圖層、只把亮度調成 0，光源數量永遠不變。
+ * 也不重新掛載任何東西，進出門不用重新合併網格。
+ */
+function Outdoors({ children }: { children: ReactNode }) {
+  const ref = useRef<Group>(null);
+  const shown = useRef(true);
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    const { inside, floor } = useClub.getState();
+    const indoor = inside || floor === 2;
+    // 室外：預設圖層就看得到，只在剛走出門的那一格還原
+    if (!indoor && shown.current) return;
+    shown.current = !indoor;
+    g.traverse((o) => {
+      const light = o as Light;
+      if (light.isLight) {
+        if (indoor) {
+          // React 之後若改了亮度（例如霓虹時段），也記下來，出門時還原成最新的值
+          if (light.intensity !== 0) light.userData.outdoorIntensity = light.intensity;
+          light.intensity = 0;
+        } else if (typeof light.userData.outdoorIntensity === 'number') {
+          light.intensity = light.userData.outdoorIntensity;
+        }
+        return;
+      }
+      if (indoor) o.layers.set(HIDDEN_LAYER);
+      else o.layers.set(0);
+    });
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
 /** 看不見的地面：點一下就走過去。範圍很大，點到樓上的牆時也會落在樓後方，角色就走進門裡 */
 function ClickGround() {
   const floor = useClub((s) => s.floor);
@@ -815,8 +865,11 @@ function World({ hour }: { hour?: number }) {
   };
   return (
     <DayNight hour={hour}>
-      {!dbg.includes('nostreet') && <Street inside={inside || floor === 2} />}
-      {!dbg.includes('nodistrict') && <District />}
+      {/* 室內（1F 走進門、2F 整層）看不到外面：街口與街區整個藏起來 */}
+      <Outdoors>
+        {!dbg.includes('nostreet') && <Street />}
+        {!dbg.includes('nodistrict') && <District />}
+      </Outdoors>
       {!dbg.includes('nohall') && floor === 1 && <MahjongHall onSelect={select} inside={inside} />}
       {!dbg.includes('nohall') && floor === 2 && <CardHall onSelect={select} />}
       <ClickGround />

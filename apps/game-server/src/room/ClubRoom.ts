@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Room, ServerError, type Client } from 'colyseus';
+import { Room, ServerError, matchMaker, type Client } from 'colyseus';
 import {
   CLUB_CHAT_HISTORY,
   CLUB_COLORS,
@@ -13,10 +13,12 @@ import {
   cleanClubName,
   cleanClubText,
   clubTableCapacity,
+  clubTableGame,
   type ClubChatMessage,
   type ClubDenied,
   type ClubPlayer,
   type ClubState,
+  type ClubTableRoom,
   type ClubWelcome,
 } from '@xiangqi-arena/game-protocol';
 import { TokenBucket } from './rateLimit';
@@ -24,6 +26,9 @@ import { logger } from '../logger';
 
 /** 1F 大門口外（與前端 layout.SPAWN 一致） */
 const SPAWN = { floor: 1, x: 0, z: 2.2, yaw: Math.PI, moving: false } as const;
+
+/** 對局房間的名稱（與 server.ts 的 ROOM_NAME 一致；寫在這裡避免循環匯入） */
+const ARENA_ROOM_NAME = 'arena';
 
 export interface ClubRoomDeps {
   /** 斷線後保留角色的秒數 */
@@ -47,6 +52,10 @@ export class ClubRoom extends Room {
   private members = new Map<string, Member>();
   private history: ClubChatMessage[] = [];
   private guestNo = 0;
+  /** 有人坐著的桌子 → 對局房間代碼（開桌中還沒建好的不在這裡） */
+  private tableRooms = new Map<string, string>();
+  /** 正在替哪些桌子開房間（避免同時坐下的兩個人各開一間） */
+  private opening = new Set<string>();
 
   override onCreate(): void {
     this.maxClients = clubRoomDeps.maxClients ?? 60;
@@ -91,12 +100,7 @@ export class ClubRoom extends Room {
       chatBucket: new TokenBucket(5, 1),
       dirty: false,
     });
-    const welcome: ClubWelcome = {
-      you: client.sessionId,
-      players: [...this.members.values()].map((m) => m.player),
-      history: this.history,
-    };
-    client.send(CLUB_MSG.welcome, welcome);
+    client.send(CLUB_MSG.welcome, this.welcome(client.sessionId));
     this.broadcast(CLUB_MSG.joined, player, { except: client });
   }
 
@@ -109,17 +113,60 @@ export class ClubRoom extends Room {
   }
 
   override onReconnect(client: Client): void {
-    const welcome: ClubWelcome = {
-      you: client.sessionId,
-      players: [...this.members.values()].map((m) => m.player),
-      history: this.history,
-    };
-    client.send(CLUB_MSG.welcome, welcome);
+    client.send(CLUB_MSG.welcome, this.welcome(client.sessionId));
   }
 
   override onLeave(client: Client): void {
-    if (!this.members.delete(client.sessionId)) return;
+    const m = this.members.get(client.sessionId);
+    if (!m) return;
+    this.members.delete(client.sessionId);
     this.broadcast(CLUB_MSG.left, { id: client.sessionId });
+    if (m.player.tableId) this.syncTable(m.player.tableId);
+  }
+
+  private welcome(you: string): ClubWelcome {
+    return {
+      you,
+      players: [...this.members.values()].map((m) => m.player),
+      history: this.history,
+      tables: Object.fromEntries(this.tableRooms),
+    };
+  }
+
+  private seatedCount(tableId: string): number {
+    let n = 0;
+    for (const m of this.members.values()) if (m.player.tableId === tableId) n++;
+    return n;
+  }
+
+  /**
+   * 桌子有人坐、還沒有對局房間：開一間（第一個坐下的人等於開桌）；
+   * 桌子沒人了：收掉代碼，下一個坐下的人重新開桌。舊房間沒人連線，會自己閒置關閉。
+   */
+  private syncTable(tableId: string): void {
+    const n = this.seatedCount(tableId);
+    if (n === 0) {
+      if (this.tableRooms.delete(tableId)) {
+        this.broadcast(CLUB_MSG.table, { tableId, code: null } satisfies ClubTableRoom);
+      }
+      return;
+    }
+    if (this.tableRooms.has(tableId) || this.opening.has(tableId)) return;
+    this.opening.add(tableId);
+    const { gameId, mode } = clubTableGame(tableId);
+    void matchMaker
+      .createRoom(ARENA_ROOM_NAME, { gameId, mode })
+      .then((room) => {
+        this.opening.delete(tableId);
+        // 開房間的這段時間裡大家都站起來了：不登記，房間沒人會自己關掉
+        if (this.seatedCount(tableId) === 0) return;
+        this.tableRooms.set(tableId, room.roomId);
+        this.broadcast(CLUB_MSG.table, { tableId, code: room.roomId } satisfies ClubTableRoom);
+      })
+      .catch((e: unknown) => {
+        this.opening.delete(tableId);
+        logger.warn({ err: e, tableId }, 'failed to open table room');
+      });
   }
 
   private pickColor(): string {
@@ -175,9 +222,12 @@ export class ClubRoom extends Room {
         return;
       }
     }
+    const prev = m.player.tableId;
     m.player.tableId = tableId;
     m.player.seat = seat;
     this.broadcast(CLUB_MSG.updated, m.player);
+    if (prev) this.syncTable(prev);
+    if (tableId) this.syncTable(tableId);
   }
 
   private onRename(client: Client, raw: unknown): void {
