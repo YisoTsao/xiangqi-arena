@@ -156,6 +156,8 @@ function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void
   );
 }
 
+const SEAT_KINDS = new Set<Interactable['kind']>(['table', 'chess', 'cards']);
+
 const ACT_LABELS: Record<Interactable['kind'], string> = {
   table: '入座',
   chess: '入座',
@@ -401,9 +403,9 @@ export function ClubScreen() {
             {elevatorOpen && nearby?.kind === 'elevator' && (
               <ElevatorPanel floor={floor} onPick={ride} onClose={() => setElevatorOpen(false)} />
             )}
-            {nearby ? (
-              <Prompt it={nearby} onAct={() => act(nearby)} />
-            ) : (
+            {nearby && <Prompt it={nearby} onAct={() => act(nearby)} />}
+            {/* 站在樓梯口、電梯口或 NPC 旁也能直接找桌子；已經在桌邊就不用 */}
+            {(!nearby || !SEAT_KINDS.has(nearby.kind)) && (
               <button
                 type="button"
                 onClick={walkToNearestTable}

@@ -383,8 +383,10 @@ function stepPlayer(h: number, [mx, mz]: [number, number]): boolean {
   if (!dx && !dz) return false;
   const next = slide(player.pos, dx, dz, useClub.getState().floor);
   const moved = Math.hypot(next[0] - player.pos[0], next[1] - player.pos[1]);
-  // 尋路時被擋住（例如路線貼著牆角）就放棄這條路
-  if (moved < step * 0.2 && player.path.length > 0) player.path = [];
+  // 尋路時被擋住（例如路線貼著牆角）就放棄這條路。要和「這一步本來要走多遠」比，
+  // 不能和整步的長度比：剛好抵達中途點時剩下的距離很短，會被誤判成卡住而停在半路。
+  const wanted = Math.hypot(dx, dz);
+  if (moved < wanted * 0.2 && player.path.length > 0) player.path = [];
   if (moved <= 1e-4) return false;
   player.yaw = Math.atan2(dx, dz);
   player.pos = [next[0], next[1]];
