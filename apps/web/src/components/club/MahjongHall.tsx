@@ -33,6 +33,10 @@ import { felt, shoji, tiled } from './textures';
 
 const WAINSCOT = 1.1;
 const H = HALL.height;
+/** 壁紙牆頂比天花線腳頂面低多少（藏進線腳裡） */
+const TRIM_TUCK = 0.04;
+/** 側牆木條比前後牆木條低多少，轉角重疊處才不會同平面 */
+const TRIM_STAGGER = 0.012;
 const D = -HALL.minZ;
 const W = HALL.maxX - HALL.minX;
 /** 室內時，靠鏡頭的正面牆與右牆切成這個高度（剖面娃娃屋） */
@@ -89,15 +93,24 @@ export function WallPanel({
   position,
   ry,
   height = H,
+  side = false,
 }: {
   length: number;
   position: [number, number, number];
   ry: number;
   height?: number;
+  /**
+   * 側牆：轉角處和前後牆的腰線、天花線腳會重疊，頂面若同高會 z-fighting 閃爍，
+   * 所以側牆的木條整體壓低一點，讓兩條木條的面錯開。
+   */
+  side?: boolean;
 }) {
   const low = Math.min(WAINSCOT, height);
+  // 壁紙牆頂收在天花線腳裡面（低於線腳頂面），不然兩個頂面同高會閃
+  const top = height > WAINSCOT ? height - TRIM_TUCK : height;
+  const drop = side ? TRIM_STAGGER : 0;
   const tile = usePbr('wall_tile', [length, low], 0.6);
-  const paper = usePbr('wallpaper', [length, Math.max(0.1, height - WAINSCOT)], 0.8);
+  const paper = usePbr('wallpaper', [length, Math.max(0.1, top - WAINSCOT)], 0.8);
   return (
     <group position={position} rotation-y={ry}>
       <mesh position-y={low / 2} receiveShadow>
@@ -105,21 +118,21 @@ export function WallPanel({
         <meshStandardMaterial {...tile} />
       </mesh>
       {height > WAINSCOT && (
-        <mesh position-y={WAINSCOT + (height - WAINSCOT) / 2} receiveShadow>
-          <boxGeometry args={[length, height - WAINSCOT, 0.3]} />
+        <mesh position-y={WAINSCOT + (top - WAINSCOT) / 2} receiveShadow>
+          <boxGeometry args={[length, top - WAINSCOT, 0.3]} />
           <meshStandardMaterial {...paper} />
         </mesh>
       )}
       <Wood
         size={[length, 0.08, 0.36]}
-        position={[0, low, 0]}
+        position={[0, low - drop, 0]}
         repeat={length / 2}
         castShadow={false}
       />
       {height > WAINSCOT && (
         <Wood
           size={[length, 0.14, 0.38]}
-          position={[0, height - 0.07, 0]}
+          position={[0, height - 0.07 - drop, 0]}
           repeat={length / 2}
           castShadow={false}
         />
@@ -174,13 +187,19 @@ function Walls({ inside }: { inside: boolean }) {
     <group>
       {/* 後牆、左牆：完整高度 */}
       <WallPanel length={W + 0.6} position={[0, 0, HALL.minZ - 0.15]} ry={0} />
-      <WallPanel length={D} position={[HALL.minX - 0.15, 0, -D / 2]} ry={Math.PI / 2} />
+      <WallPanel
+        length={D}
+        position={[HALL.minX - 0.15, 0, -D / 2]}
+        ry={Math.PI / 2}
+        side
+      />
       {/* 右牆：進到室內時切低，鏡頭從右前方看進來 */}
       <WallPanel
         length={D}
         position={[HALL.maxX + 0.15, 0, -D / 2]}
         ry={-Math.PI / 2}
         height={inside ? CUT : H}
+        side
       />
       {/* 正面牆內側（門的兩邊）：只有在室內時出現，切低 */}
       {inside &&
@@ -862,7 +881,8 @@ function Decor() {
       <Sign
         text="平安喜樂"
         size={[1.6, 0.42]}
-        position={[-6.4, 2.95, HALL.minZ + 0.02]}
+        // 樓梯指示牌佔 x -8.3 ~ -6.4，兩塊牌子不能重疊（同一個平面會閃）
+        position={[-5.3, 2.95, HALL.minZ + 0.03]}
         bg={CLUB.neonRed}
         fg={CLUB.amber}
         glow={0.2}
