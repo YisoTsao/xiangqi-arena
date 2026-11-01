@@ -15,6 +15,7 @@ import {
   type PerspectiveCamera,
 } from 'three';
 import { Character, PLAYER_OUTFIT, animateWalk } from './Character';
+import { ClubPresence } from './RemotePlayers';
 import { useInteriorWindowClock } from './InteriorWindow';
 import { gameHourAt, lightingAt } from './clock';
 import { Effects } from './Effects';
@@ -636,6 +637,7 @@ function World({ hour }: { hour?: number }) {
       {!dbg.includes('nohall') && floor === 2 && <CardHall onSelect={select} />}
       <ClickGround />
       <Player />
+      <ClubPresence />
       <CameraRig />
     </DayNight>
   );

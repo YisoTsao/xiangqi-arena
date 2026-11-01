@@ -27,6 +27,10 @@ import {
   type Interactable,
 } from './layout';
 import { TRAVEL_FADE_MS, player, useClub, walkToNearestTable } from './store';
+import { ChatPanel, OnlineCount } from './ChatPanel';
+import { PresenceOverlay } from './PresenceOverlay';
+import { isTableFull, joinClubLobby, seatedAt, useClubNet } from './net';
+import { clubTableCapacity } from '@xiangqi-arena/game-protocol';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -139,6 +143,7 @@ function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void
         <div className="mt-3 flex items-center gap-2">
           <Clock hour={hour} />
           <WeatherToggle />
+          <OnlineCount />
         </div>
         <div className="mt-6 grid gap-2 sm:w-64">
           <Button variant="primary" size="lg" onClick={onEnter} data-testid="club-enter">
@@ -223,14 +228,28 @@ function ElevatorPanel({
 }
 
 function Prompt({ it, onAct }: { it: Interactable; onAct: () => void }) {
+  const seat = SEAT_KINDS.has(it.kind);
+  const count = useClubNet((s) => (seat ? seatedAt(s.players, it.id).length : 0));
+  const cap = seat ? clubTableCapacity(it.id) : 0;
   return (
     <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-[#F2B552]/40 bg-[#24344D]/85 py-2 pr-2 pl-4 text-sm text-[#F2DAB6] shadow-xl backdrop-blur animate-rise">
       <kbd className="hidden rounded-md border border-[#F2DAB6]/40 px-1.5 font-mono text-xs sm:inline">
         E
       </kbd>
       <span data-testid="club-prompt">{it.label}</span>
-      <Button variant="primary" size="sm" onClick={onAct} data-testid="club-act">
-        {ACT_LABELS[it.kind]}
+      {seat && count > 0 && (
+        <span data-testid="club-prompt-seats" className="text-xs text-[#F2DAB6]/70">
+          {count}/{cap} 人
+        </span>
+      )}
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={onAct}
+        disabled={seat && count >= cap}
+        data-testid="club-act"
+      >
+        {seat && count >= cap ? '滿座' : ACT_LABELS[it.kind]}
       </Button>
     </div>
   );
@@ -252,6 +271,9 @@ export function ClubScreen() {
   // 網址加 ?q=high／medium／low 可以固定畫質（截圖比對用）
   const [qualityOverride, setQualityOverride] = useState<'low' | 'medium' | 'high' | null>(null);
   const hour = useGameHour(override);
+
+  // 一個視窗就是一個角色：進到 /club 就連上大廳，大家互相看得到
+  useEffect(() => joinClubLobby(), []);
 
   useEffect(() => {
     setWebgl(isWebGLAvailable());
@@ -285,6 +307,10 @@ export function ClubScreen() {
       case 'table':
       case 'chess':
       case 'cards':
+        if (isTableFull(it.id)) {
+          say('系統', '這桌坐滿了，換一張吧！');
+          break;
+        }
         sit(it.id);
         break;
       case 'npc':
@@ -359,6 +385,7 @@ export function ClubScreen() {
       className="fixed inset-0 overflow-hidden bg-[#24344D]"
     >
       {webgl && <ClubScene hour={override} quality={quality} />}
+      {webgl && mode !== 'seated' && <PresenceOverlay />}
 
       {mode === 'title' && <TitleMenu hour={hour} onEnter={() => setMode('intro')} />}
 
@@ -380,6 +407,7 @@ export function ClubScreen() {
               )}
               <Clock hour={hour} />
               <WeatherToggle />
+              <OnlineCount />
             </div>
             <Link
               href="/"
@@ -436,6 +464,8 @@ export function ClubScreen() {
         className="pointer-events-none absolute inset-0 z-30 bg-[#141018] transition-opacity ease-in-out"
         style={{ opacity: mode === 'travel' ? 1 : 0, transitionDuration: `${TRAVEL_FADE_MS}ms` }}
       />
+
+      {mode !== 'intro' && <ChatPanel />}
 
       {mode === 'seated' && table && (
         <div
