@@ -46,6 +46,30 @@ export const A_LE_OUTFIT: Outfit = {
   apron: '#4E816F',
 };
 
+/** 2F 牌桌館的小葵：綠背心的牌桌管理員 */
+export const HOST_OUTFIT: Outfit = {
+  skin: '#f3d2b6',
+  hair: '#3a2f2c',
+  shirt: '#f6efdc',
+  jacket: '#2f6b55',
+  bottom: '#24344D',
+  socks: '#f2eee6',
+  shoes: '#3a2a24',
+  longHair: true,
+};
+
+/** 2F 觀棋的老伯：鴨舌帽、條紋衫 */
+export const WATCHER_OUTFIT: Outfit = {
+  skin: '#e8c09c',
+  hair: '#c9c4bc',
+  hat: '#5e3f2c',
+  shirt: '#e9e2cf',
+  stripe: '#4E816F',
+  bottom: '#6b5a48',
+  socks: '#3a3036',
+  shoes: '#4a3428',
+};
+
 const OUTLINE = '#2a1d1a';
 
 /** 卡通明暗材質 + 深色描邊（角色共用；場景物件用 PBR，角色從背景跳出來） */

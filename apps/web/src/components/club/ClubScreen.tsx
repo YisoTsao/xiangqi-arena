@@ -3,13 +3,30 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { CloudRain, DoorOpen, Footprints, LogOut, Navigation, Sun } from 'lucide-react';
+import {
+  ArrowUpDown,
+  CloudRain,
+  DoorOpen,
+  Footprints,
+  LogOut,
+  Navigation,
+  Sun,
+  X,
+} from 'lucide-react';
 import { isWebGLAvailable, recommendedQuality } from '@xiangqi-arena/game-renderer';
+import { BigTwoPracticeScreen } from '../bigtwo/BigTwoPracticeScreen';
+import { LocalScreen } from '../LocalScreen';
 import { MahjongPracticeScreen } from '../mahjong/MahjongPracticeScreen';
 import { Button } from '../ui/button';
 import { DAY_PHASE_LABELS, dayPhaseOf, formatGameTime, gameHourAt } from './clock';
-import { INTERACTABLES, type Interactable } from './layout';
-import { player, useClub, walkToNearestTable } from './store';
+import {
+  ALL_INTERACTABLES,
+  ELEVATOR_LANDING,
+  STAIRS_LANDING_2F,
+  type Floor,
+  type Interactable,
+} from './layout';
+import { TRAVEL_FADE_MS, player, useClub, walkToNearestTable } from './store';
 import { useSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -20,17 +37,38 @@ const ClubScene = dynamic(() => import('./ClubScene').then((m) => m.ClubScene), 
 const A_LE_LINES = [
   '歡迎光臨！桌子都空著，挑一張坐吧。',
   '今天手氣怎麼樣？先喝杯烏龍再上桌。',
-  '樓上牌桌館還在整修，過陣子就開了。',
+  '樓上 2F 是牌桌館，想下象棋、打大老二就上樓。',
   '打牌別急，聽牌了再來跟我炫耀。',
   '晚上最熱鬧，霓虹一亮客人就上門囉。',
 ];
 
-/** 截圖用的固定站位：室內全景、剛進門、牌桌旁 */
-const SPAWNS: Record<string, { pos: [number, number]; yaw: number }> = {
+const HOST_LINES = [
+  '歡迎來到牌桌館！左邊下棋，右邊打牌，隨便坐。',
+  '棋桌是兩人同一台裝置對弈，找朋友來一盤吧。',
+  '牌桌的三位老客人都是電腦，打大老二不會累。',
+  '觀棋不語真君子，阿伯看了一下午都沒出聲。',
+  '3F 電玩網咖還在整修，電梯先只停 1F、2F。',
+];
+
+/** 截圖與 E2E 用的固定站位：1F 室內全景、剛進門、牌桌旁、樓梯口、電梯口；2F 全景、棋桌旁、牌桌旁 */
+const SPAWNS: Record<string, { pos: [number, number]; yaw: number; floor?: Floor }> = {
   hall: { pos: [-0.4, -6.8], yaw: Math.PI },
   door: { pos: [0, -1.2], yaw: Math.PI },
   table: { pos: [-2, -3.9], yaw: Math.PI },
+  stairs: { pos: [-8.15, -7.9], yaw: Math.PI },
+  elevator: { pos: [7.5, -9.7], yaw: Math.PI },
+  '2f': { pos: [0.2, -6], yaw: Math.PI, floor: 2 },
+  '2f-chess': { pos: [-4.4, -1.6], yaw: Math.PI, floor: 2 },
+  '2f-cards': { pos: [3, -1.6], yaw: Math.PI, floor: 2 },
 };
+
+/** 電梯面板：1F、2F 可以去，3F 以上整修中 */
+const ELEVATOR_STOPS: { floor: number; label: string; open: boolean }[] = [
+  { floor: 4, label: '4F 私人包廂', open: false },
+  { floor: 3, label: '3F 電玩網咖', open: false },
+  { floor: 2, label: '2F 牌桌館', open: true },
+  { floor: 1, label: '1F 麻將館', open: true },
+];
 
 /** 遊戲時間：每 5 秒更新一次（網址加 ?hour=20 可固定時間，方便看夜景） */
 function useGameHour(override: number | undefined): number | null {
@@ -96,7 +134,7 @@ function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void
           暮光<span className="text-[#E95B4B]">遊樂館</span>
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-[#F2DAB6]/80">
-          藏在老街裡、燈從不熄的遊戲俱樂部。1F 麻將館已經開門，找張桌子坐下來吧。
+          藏在老街裡、燈從不熄的遊戲俱樂部。1F 麻將館、2F 牌桌館都開門了，找張桌子坐下來吧。
         </p>
         <div className="mt-3 flex items-center gap-2">
           <Clock hour={hour} />
@@ -118,6 +156,70 @@ function TitleMenu({ hour, onEnter }: { hour: number | null; onEnter: () => void
   );
 }
 
+const ACT_LABELS: Record<Interactable['kind'], string> = {
+  table: '入座',
+  chess: '入座',
+  cards: '入座',
+  npc: '聊天',
+  host: '聊天',
+  stairs: '上樓',
+  stairsDown: '下樓',
+  elevator: '搭乘',
+};
+
+/** 電梯樓層面板 */
+function ElevatorPanel({
+  floor,
+  onPick,
+  onClose,
+}: {
+  floor: Floor;
+  onPick: (to: Floor) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      data-testid="club-elevator"
+      className="pointer-events-auto w-60 rounded-2xl border border-[#F2B552]/40 bg-[#24344D]/90 p-3 text-sm text-[#F2DAB6] shadow-xl backdrop-blur animate-rise"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-bold">電梯</span>
+        <button
+          type="button"
+          aria-label="關閉"
+          onClick={onClose}
+          className="rounded-full p-1 text-[#F2DAB6]/70 hover:text-[#F2DAB6]"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="grid gap-1.5">
+        {ELEVATOR_STOPS.map((s) => {
+          const here = s.floor === floor;
+          return (
+            <button
+              key={s.floor}
+              type="button"
+              data-testid={`club-elevator-${s.floor}f`}
+              disabled={!s.open || here}
+              onClick={() => onPick(s.floor as Floor)}
+              className={cn(
+                'flex items-center justify-between rounded-xl border px-3 py-1.5 text-left',
+                s.open && !here
+                  ? 'border-[#F2B552]/50 hover:bg-[#F2B552]/15'
+                  : 'border-white/10 text-[#F2DAB6]/45',
+              )}
+            >
+              <span>{s.label}</span>
+              <span className="text-[11px]">{here ? '目前樓層' : s.open ? '' : '整修中'}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Prompt({ it, onAct }: { it: Interactable; onAct: () => void }) {
   return (
     <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-[#F2B552]/40 bg-[#24344D]/85 py-2 pr-2 pl-4 text-sm text-[#F2DAB6] shadow-xl backdrop-blur animate-rise">
@@ -126,19 +228,22 @@ function Prompt({ it, onAct }: { it: Interactable; onAct: () => void }) {
       </kbd>
       <span data-testid="club-prompt">{it.label}</span>
       <Button variant="primary" size="sm" onClick={onAct} data-testid="club-act">
-        {it.kind === 'table' ? '入座' : it.kind === 'npc' ? '聊天' : '查看'}
+        {ACT_LABELS[it.kind]}
       </Button>
     </div>
   );
 }
 
-/** /club：街口首頁 → 走進 1F 麻將館 → 入座打牌 */
+/** /club：街口首頁 → 走進 1F 麻將館 → 入座打牌；上樓到 2F 牌桌館下棋、打大老二 */
 export function ClubScreen() {
   const mode = useClub((s) => s.mode);
   const nearby = useClub((s) => s.nearby);
+  const inside = useClub((s) => s.inside);
   const bubble = useClub((s) => s.bubble);
   const seatedAt = useClub((s) => s.seatedAt);
-  const { setMode, sit, stand, say, reset } = useClub.getState();
+  const floor = useClub((s) => s.floor);
+  const { setMode, sit, stand, say, reset, travel } = useClub.getState();
+  const [elevatorOpen, setElevatorOpen] = useState(false);
   const qualitySetting = useSettings((s) => s.quality);
   const [webgl, setWebgl] = useState<boolean | null>(null);
   const [override, setOverride] = useState<number | undefined>(undefined);
@@ -160,17 +265,41 @@ export function ClubScreen() {
     if (spawn) {
       player.pos = [...spawn.pos];
       player.yaw = spawn.yaw;
-      useClub.setState({ mode: 'walk', inside: true });
+      useClub.setState({ mode: 'walk', inside: true, floor: spawn.floor ?? 1 });
     }
   }, [reset]);
 
+  const pickLine = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)]!;
+
+  const ride = (to: Floor) => {
+    setElevatorOpen(false);
+    // 出電梯面向畫面下方（+z），背對電梯門
+    travel(to, ELEVATOR_LANDING, 0);
+  };
+
   const act = (it: Interactable | null) => {
     if (!it || useClub.getState().mode !== 'walk') return;
-    if (it.kind === 'table') sit(it.id);
-    else if (it.kind === 'npc') {
-      say('阿樂', A_LE_LINES[Math.floor(Math.random() * A_LE_LINES.length)]!);
-    } else {
-      say('告示', '2F 以上還在整修，開放後就能上樓了。');
+    switch (it.kind) {
+      case 'table':
+      case 'chess':
+      case 'cards':
+        sit(it.id);
+        break;
+      case 'npc':
+        say('阿樂', pickLine(A_LE_LINES));
+        break;
+      case 'host':
+        say('小葵', pickLine(HOST_LINES));
+        break;
+      case 'stairs':
+        travel(2, STAIRS_LANDING_2F, 0);
+        break;
+      case 'stairsDown':
+        travel(1, STAIRS_LANDING_2F, 0);
+        break;
+      case 'elevator':
+        setElevatorOpen((o) => !o);
+        break;
     }
   };
 
@@ -196,6 +325,7 @@ export function ClubScreen() {
   }, [bubble]);
   useEffect(() => {
     if (!nearby) useClub.setState({ bubble: null });
+    if (nearby?.kind !== 'elevator') setElevatorOpen(false);
   }, [nearby]);
 
   if (webgl === false) {
@@ -217,7 +347,8 @@ export function ClubScreen() {
   const quality =
     qualityOverride ??
     (qualitySetting === 'auto' || qualitySetting === '2d' ? recommendedQuality() : qualitySetting);
-  const table = INTERACTABLES.find((x) => x.id === seatedAt);
+  const table = ALL_INTERACTABLES.find((x) => x.id === seatedAt);
+  const leaveTable = () => table && stand(table.approach);
 
   return (
     <div
@@ -236,6 +367,15 @@ export function ClubScreen() {
               <div className="rounded-full bg-[#24344D]/75 px-3 py-1 font-serif text-sm font-bold text-[#F2DAB6] backdrop-blur">
                 暮光<span className="text-[#E95B4B]">遊樂館</span>
               </div>
+              {(inside || floor === 2) && (
+                <div
+                  data-testid="club-floor"
+                  className="hidden items-center gap-1 rounded-full bg-[#24344D]/75 px-3 py-1 text-xs text-[#F2DAB6] backdrop-blur sm:flex"
+                >
+                  <ArrowUpDown className="size-3" />
+                  {floor === 2 ? '2F 牌桌館' : '1F 麻將館'}
+                </div>
+              )}
               <Clock hour={hour} />
               <WeatherToggle />
             </div>
@@ -257,6 +397,9 @@ export function ClubScreen() {
                 <span className="mr-1 font-bold text-[#E95B4B]">{bubble.who}</span>
                 {bubble.text}
               </div>
+            )}
+            {elevatorOpen && nearby?.kind === 'elevator' && (
+              <ElevatorPanel floor={floor} onPick={ride} onClose={() => setElevatorOpen(false)} />
             )}
             {nearby ? (
               <Prompt it={nearby} onAct={() => act(nearby)} />
@@ -284,9 +427,27 @@ export function ClubScreen() {
         </>
       )}
 
+      {/* 換樓層的黑幕：淡出 → 換樓層 → 淡入 */}
+      <div
+        aria-hidden
+        data-testid="club-fade"
+        className="pointer-events-none absolute inset-0 z-30 bg-[#141018] transition-opacity ease-in-out"
+        style={{ opacity: mode === 'travel' ? 1 : 0, transitionDuration: `${TRAVEL_FADE_MS}ms` }}
+      />
+
       {mode === 'seated' && table && (
-        <div className="absolute inset-0 z-40 overflow-y-auto bg-ink-950" data-testid="club-table">
-          <MahjongPracticeScreen onExit={() => stand(table.approach)} />
+        <div
+          className="absolute inset-0 z-40 overflow-y-auto bg-ink-950"
+          data-testid="club-table"
+          data-game={table.kind}
+        >
+          {table.kind === 'cards' ? (
+            <BigTwoPracticeScreen onExit={leaveTable} />
+          ) : table.kind === 'chess' ? (
+            <LocalScreen initialMode={table.mode ?? 'classic'} onExit={leaveTable} />
+          ) : (
+            <MahjongPracticeScreen onExit={leaveTable} />
+          )}
         </div>
       )}
     </div>

@@ -189,6 +189,83 @@ export const felt = () =>
     }
   });
 
+/** 2F 棋桌桌面：木色象棋盤（9 路 10 線、九宮斜線、楚河漢界），整張貼在桌面上 */
+export const xiangqiBoard = () =>
+  paint('xiangqi-board', 256, (ctx, w, h) => {
+    ctx.fillStyle = '#e2b77c';
+    ctx.fillRect(0, 0, w, h);
+    const m = 22;
+    const gx = (w - m * 2) / 8;
+    const gy = (h - m * 2) / 9;
+    ctx.strokeStyle = '#5a3418';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(m - 6, m - 6, w - (m - 6) * 2, h - (m - 6) * 2);
+    ctx.lineWidth = 1.5;
+    for (let r = 0; r < 10; r++) {
+      ctx.beginPath();
+      ctx.moveTo(m, m + r * gy);
+      ctx.lineTo(w - m, m + r * gy);
+      ctx.stroke();
+    }
+    for (let c = 0; c < 9; c++) {
+      for (const [a, b] of [
+        [0, 4],
+        [5, 9],
+      ] as const) {
+        if (c > 0 && c < 8) {
+          ctx.beginPath();
+          ctx.moveTo(m + c * gx, m + a * gy);
+          ctx.lineTo(m + c * gx, m + b * gy);
+          ctx.stroke();
+        }
+      }
+      if (c === 0 || c === 8) {
+        ctx.beginPath();
+        ctx.moveTo(m + c * gx, m);
+        ctx.lineTo(m + c * gx, h - m);
+        ctx.stroke();
+      }
+    }
+    for (const top of [0, 7]) {
+      ctx.beginPath();
+      ctx.moveTo(m + 3 * gx, m + top * gy);
+      ctx.lineTo(m + 5 * gx, m + (top + 2) * gy);
+      ctx.moveTo(m + 5 * gx, m + top * gy);
+      ctx.lineTo(m + 3 * gx, m + (top + 2) * gy);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#5a3418';
+    ctx.font = `bold ${Math.round(gy * 0.62)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('楚 河', m + 2 * gx, m + 4.5 * gy);
+    ctx.fillText('漢 界', m + 6 * gx, m + 4.5 * gy);
+  });
+
+/** 2F 暗棋桌面：4 × 8 的方格（半張象棋盤），棋子蓋著放在格子裡 */
+export const banqiBoard = () =>
+  paint('banqi-board', 256, (ctx, w, h) => {
+    ctx.fillStyle = '#e2b77c';
+    ctx.fillRect(0, 0, w, h);
+    const m = 20;
+    const gx = (w - m * 2) / 8;
+    const gy = (h - m * 2) / 4;
+    ctx.strokeStyle = '#5a3418';
+    ctx.lineWidth = 2;
+    for (let r = 0; r <= 4; r++) {
+      ctx.beginPath();
+      ctx.moveTo(m, m + r * gy);
+      ctx.lineTo(w - m, m + r * gy);
+      ctx.stroke();
+    }
+    for (let c = 0; c <= 8; c++) {
+      ctx.beginPath();
+      ctx.moveTo(m + c * gx, m);
+      ctx.lineTo(m + c * gx, h - m);
+      ctx.stroke();
+    }
+  });
+
 /** 和紙格窗：米白紙 + 木格；透光用 emissive */
 export const shoji = () =>
   paint('shoji', 256, (ctx, w, h) => {

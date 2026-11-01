@@ -9,6 +9,12 @@
 
 export type Vec2 = readonly [x: number, z: number];
 
+/** 樓層：1 = 街口與 1F 麻將館（同一個平面），2 = 2F 牌桌館 */
+export type Floor = 1 | 2;
+/** 每層樓高（地板到地板），2F 的地板在 y = FLOOR_HEIGHT */
+export const FLOOR_HEIGHT = 3.6;
+export const floorY = (floor: Floor): number => (floor - 1) * FLOOR_HEIGHT;
+
 /** 地面上的軸對齊方塊碰撞體 */
 export interface Box {
   minX: number;
@@ -124,7 +130,7 @@ export const POLES: readonly Vec2[] = [
 /** 紅綠兩個郵筒並排 */
 export const MAILBOX: Vec2 = [3, 2.2];
 
-/** 所有擋路的方塊 */
+/** 街口與 1F 所有擋路的方塊 */
 export const COLLIDERS: readonly Box[] = [
   // 正面牆，中間留門
   box(HALL.minX - WALL, DOOR.minX, -WALL / 2, WALL / 2),
@@ -160,9 +166,96 @@ export const COLLIDERS: readonly Box[] = [
   ...POLES.map((p) => centered(p[0], p[1], 0.35, 0.35)),
 ];
 
+// ── 2F 牌桌館 ──────────────────────────────────────────
+//
+// 和 1F 同一個樓板範圍（x ∈ [-9, 9]、z ∈ [-12, 0]），樓梯與電梯在同一個位置上下貫通。
+// 左半邊是兩人對弈的木棋桌（象棋、暗棋），右半邊是四人撲克圓桌（大老二），
+// 後牆中央是服務台，前牆一排窗看得到街上的霓虹。
+
+/** 2F 的開場位置：樓梯口（上樓或出電梯後站的地方） */
+export const STAIRS_LANDING_2F: Vec2 = [-8.15, -7.9];
+export const ELEVATOR_LANDING: Vec2 = [7.5, -9.7];
+
+/** 木棋桌：桌面 0.9m 見方，南北各一張椅子（你坐南邊） */
+export const CHESS_TABLE_SIZE = 0.9;
+export const CHESS_CHAIR_OFFSET = 0.72;
+/** 棋桌：前排兩張大盤象棋、後排兩張暗棋 */
+export const CHESS_TABLES: readonly { at: Vec2; mode: 'classic' | 'banqi' }[] = [
+  { at: [-6, -3.3], mode: 'classic' },
+  { at: [-2.9, -3.3], mode: 'classic' },
+  { at: [-6, -6.9], mode: 'banqi' },
+  { at: [-2.9, -6.9], mode: 'banqi' },
+];
+export function chessChairsOf([x, z]: Vec2): Vec2[] {
+  return [
+    [x, z + CHESS_CHAIR_OFFSET],
+    [x, z - CHESS_CHAIR_OFFSET],
+  ];
+}
+
+/** 撲克圓桌：直徑 1.4m（CLUB_ART_BIBLE §3.1），四張椅子 */
+export const CARD_TABLE_RADIUS = 0.7;
+export const CARD_CHAIR_OFFSET = 1.05;
+export const CARD_TABLES: readonly Vec2[] = [
+  [2.6, -3.5],
+  [6, -3.5],
+  [4.3, -7.3],
+];
+export function cardChairsOf([x, z]: Vec2): Vec2[] {
+  return [
+    [x, z + CARD_CHAIR_OFFSET],
+    [x + CARD_CHAIR_OFFSET, z],
+    [x, z - CARD_CHAIR_OFFSET],
+    [x - CARD_CHAIR_OFFSET, z],
+  ];
+}
+
+/** 服務台（小葵站在後面）、棋具櫃、窗邊沙發 */
+export const HOST_DESK = box(-1.5, 1.5, -10.9, -10.3);
+export const HOST: Vec2 = [0, -11.4];
+/** 站在 2 號棋桌旁觀棋的老伯（觀棋不語） */
+export const WATCHER: Vec2 = [-1.75, -2.75];
+export const GAME_SHELF = box(-6.4, -3.6, -11.95, -11.5);
+export const SOFA_2F = box(-3, -0.6, -0.75, -0.25);
+export const PLANTS_2F: readonly Vec2[] = [
+  [-8.3, -0.8],
+  [8.3, -0.8],
+  [3, -11.3],
+  [8.4, -6.6],
+];
+
+export const COLLIDERS_2F: readonly Box[] = [
+  // 四面牆（2F 沒有門）
+  box(HALL.minX - WALL, HALL.maxX + WALL, -WALL / 2, WALL / 2),
+  box(HALL.minX - WALL, HALL.minX, HALL.minZ - WALL, 0),
+  box(HALL.maxX, HALL.maxX + WALL, HALL.minZ - WALL, 0),
+  box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, HALL.minZ),
+  // 樓梯井與電梯
+  STAIRS,
+  ELEVATOR,
+  ...CHESS_TABLES.flatMap(({ at }) => [
+    centered(at[0], at[1], CHESS_TABLE_SIZE, CHESS_TABLE_SIZE),
+    ...chessChairsOf(at).map((c) => centered(c[0], c[1], CHAIR_SIZE, CHAIR_SIZE)),
+  ]),
+  ...CARD_TABLES.flatMap((t) => [
+    centered(t[0], t[1], CARD_TABLE_RADIUS * 2, CARD_TABLE_RADIUS * 2),
+    ...cardChairsOf(t).map((c) => centered(c[0], c[1], CHAIR_SIZE, CHAIR_SIZE)),
+  ]),
+  HOST_DESK,
+  box(HOST[0] - 0.3, HOST[0] + 0.3, HOST[1] - 0.3, HOST[1] + 0.3),
+  centered(WATCHER[0], WATCHER[1], 0.6, 0.6),
+  GAME_SHELF,
+  SOFA_2F,
+  ...PLANTS_2F.map((p) => centered(p[0], p[1], 0.6, 0.6)),
+];
+
+export const collidersOf = (floor: Floor): readonly Box[] =>
+  floor === 2 ? COLLIDERS_2F : COLLIDERS;
+
 // ── 互動點 ─────────────────────────────────────────────
 
-export type InteractableKind = 'table' | 'npc' | 'stairs' | 'elevator';
+export type InteractableKind =
+  'table' | 'chess' | 'cards' | 'npc' | 'host' | 'stairs' | 'stairsDown' | 'elevator';
 
 export interface Interactable {
   id: string;
@@ -174,6 +267,8 @@ export interface Interactable {
   label: string;
   /** 走過去時要停的位置 */
   approach: Vec2;
+  /** 棋桌的模式（大盤象棋／暗棋） */
+  mode?: 'classic' | 'banqi';
 }
 
 export const INTERACTABLES: readonly Interactable[] = [
@@ -198,7 +293,7 @@ export const INTERACTABLES: readonly Interactable[] = [
     kind: 'stairs',
     at: [-8.15, -8.6],
     radius: 1.5,
-    label: '上樓',
+    label: '上樓到 2F 牌桌館',
     approach: [-8.15, -7.9],
   },
   {
@@ -211,11 +306,62 @@ export const INTERACTABLES: readonly Interactable[] = [
   },
 ];
 
+/** 2F 牌桌館的互動點；桌號接著 1F 往下編，id 不和 1F 重複 */
+export const INTERACTABLES_2F: readonly Interactable[] = [
+  ...CHESS_TABLES.map(({ at, mode }, i): Interactable => ({
+    id: `chess-${i + 1}`,
+    kind: 'chess',
+    at,
+    radius: 1.5,
+    label: `入座 ${i + 1} 號棋桌，${mode === 'classic' ? '大盤象棋' : '暗棋'}雙人對弈`,
+    approach: [at[0], at[1] + 1.35],
+    mode,
+  })),
+  ...CARD_TABLES.map((t, i): Interactable => ({
+    id: `cards-${i + 1}`,
+    kind: 'cards',
+    at: t,
+    radius: 2,
+    label: `入座 ${i + 1} 號牌桌，和電腦打大老二`,
+    approach: [t[0], t[1] + 1.75],
+  })),
+  {
+    id: 'host',
+    kind: 'host',
+    at: HOST,
+    radius: 2.2,
+    label: '和小葵聊天',
+    approach: [0, -9.6],
+  },
+  {
+    id: 'stairs-down',
+    kind: 'stairsDown',
+    at: [-8.15, -8.6],
+    radius: 1.5,
+    label: '下樓到 1F 麻將館',
+    approach: STAIRS_LANDING_2F,
+  },
+  {
+    id: 'elevator-2f',
+    kind: 'elevator',
+    at: [7.5, -10.4],
+    radius: 1.6,
+    label: '搭電梯',
+    approach: ELEVATOR_LANDING,
+  },
+];
+
+export const interactablesOf = (floor: Floor): readonly Interactable[] =>
+  floor === 2 ? INTERACTABLES_2F : INTERACTABLES;
+
+/** 所有樓層的互動點（依 id 找桌子用） */
+export const ALL_INTERACTABLES: readonly Interactable[] = [...INTERACTABLES, ...INTERACTABLES_2F];
+
 /** 目前最近、在範圍內的互動點 */
-export function nearestInteractable(p: Vec2): Interactable | null {
+export function nearestInteractable(p: Vec2, floor: Floor = 1): Interactable | null {
   let best: Interactable | null = null;
   let bestD = Infinity;
-  for (const it of INTERACTABLES) {
+  for (const it of interactablesOf(floor)) {
     const d = Math.hypot(p[0] - it.at[0], p[1] - it.at[1]);
     if (d <= it.radius && d < bestD) {
       best = it;
@@ -235,24 +381,24 @@ function circleHitsBox(x: number, z: number, r: number, b: Box): boolean {
   return dx * dx + dz * dz < r * r;
 }
 
-export function isFree(x: number, z: number, r = PLAYER_RADIUS): boolean {
+export function isFree(x: number, z: number, r = PLAYER_RADIUS, floor: Floor = 1): boolean {
   if (x - r < BOUNDS.minX || x + r > BOUNDS.maxX || z - r < BOUNDS.minZ || z + r > BOUNDS.maxZ) {
     return false;
   }
-  for (const b of COLLIDERS) if (circleHitsBox(x, z, r, b)) return false;
+  for (const b of collidersOf(floor)) if (circleHitsBox(x, z, r, b)) return false;
   return true;
 }
 
 /** 往 (dx, dz) 移動；撞到就沿著牆滑（x、z 分開判定） */
-export function slide(from: Vec2, dx: number, dz: number): Vec2 {
+export function slide(from: Vec2, dx: number, dz: number, floor: Floor = 1): Vec2 {
   let [x, z] = from;
-  if (isFree(x + dx, z)) x += dx;
-  if (isFree(x, z + dz)) z += dz;
+  if (isFree(x + dx, z, PLAYER_RADIUS, floor)) x += dx;
+  if (isFree(x, z + dz, PLAYER_RADIUS, floor)) z += dz;
   return [x, z];
 }
 
-/** 室內判定：過了門口那條線 */
-export const isInside = ([, z]: Vec2): boolean => z < 0.3;
+/** 室內判定：1F 過了門口那條線；2F 一律在室內 */
+export const isInside = ([, z]: Vec2, floor: Floor = 1): boolean => floor === 2 || z < 0.3;
 
 // ── 點地面尋路（0.5m 格子上的 A*） ─────────────────────
 
@@ -262,14 +408,18 @@ const ROWS = Math.round((BOUNDS.maxZ - BOUNDS.minZ) / CELL);
 const cellX = (c: number) => BOUNDS.minX + (c + 0.5) * CELL;
 const cellZ = (r: number) => BOUNDS.minZ + (r + 0.5) * CELL;
 
-let walkable: Uint8Array | null = null;
-function grid(): Uint8Array {
-  if (walkable) return walkable;
-  walkable = new Uint8Array(COLS * ROWS);
+const walkable = new Map<Floor, Uint8Array>();
+function grid(floor: Floor): Uint8Array {
+  const cached = walkable.get(floor);
+  if (cached) return cached;
+  const g = new Uint8Array(COLS * ROWS);
   for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) walkable[r * COLS + c] = isFree(cellX(c), cellZ(r)) ? 1 : 0;
+    for (let c = 0; c < COLS; c++) {
+      g[r * COLS + c] = isFree(cellX(c), cellZ(r), PLAYER_RADIUS, floor) ? 1 : 0;
+    }
   }
-  return walkable;
+  walkable.set(floor, g);
+  return g;
 }
 
 function cellOf([x, z]: Vec2): number {
@@ -279,8 +429,8 @@ function cellOf([x, z]: Vec2): number {
 }
 
 /** 目標格走不到時，找最近的可走格 */
-function nearestWalkable(target: number): number {
-  const g = grid();
+function nearestWalkable(target: number, floor: Floor): number {
+  const g = grid(floor);
   if (g[target]) return target;
   const tc = target % COLS;
   const tr = Math.floor(target / COLS);
@@ -305,12 +455,14 @@ function nearestWalkable(target: number): number {
 }
 
 /** 兩點之間的直線是否整段可走（每 0.15m 取樣一次） */
-export function clearLine(a: Vec2, b: Vec2): boolean {
+export function clearLine(a: Vec2, b: Vec2, floor: Floor = 1): boolean {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const steps = Math.max(1, Math.ceil(len / 0.15));
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
-    if (!isFree(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return false;
+    const x = a[0] + (b[0] - a[0]) * t;
+    const z = a[1] + (b[1] - a[1]) * t;
+    if (!isFree(x, z, PLAYER_RADIUS, floor)) return false;
   }
   return true;
 }
@@ -318,14 +470,14 @@ export function clearLine(a: Vec2, b: Vec2): boolean {
 /**
  * 從 from 走到 to 的路徑（不含起點）。走不到目標時改走到最近的可走點；完全沒路回傳空陣列。
  */
-export function findPath(from: Vec2, to: Vec2): Vec2[] {
-  const g = grid();
-  const start = nearestWalkable(cellOf(from));
-  const goal = nearestWalkable(cellOf(to));
-  const goalPoint: Vec2 = isFree(to[0], to[1])
+export function findPath(from: Vec2, to: Vec2, floor: Floor = 1): Vec2[] {
+  const g = grid(floor);
+  const start = nearestWalkable(cellOf(from), floor);
+  const goal = nearestWalkable(cellOf(to), floor);
+  const goalPoint: Vec2 = isFree(to[0], to[1], PLAYER_RADIUS, floor)
     ? to
     : [cellX(goal % COLS), cellZ(Math.floor(goal / COLS))];
-  if (clearLine(from, goalPoint)) return [goalPoint];
+  if (clearLine(from, goalPoint, floor)) return [goalPoint];
 
   const size = COLS * ROWS;
   const gScore = new Float32Array(size).fill(Infinity);
@@ -383,7 +535,7 @@ export function findPath(from: Vec2, to: Vec2): Vec2[] {
   let i = 0;
   while (i < cells.length) {
     let j = cells.length - 1;
-    while (j > i && !clearLine(anchor, cells[j]!)) j--;
+    while (j > i && !clearLine(anchor, cells[j]!, floor)) j--;
     out.push(cells[j]!);
     anchor = cells[j]!;
     i = j + 1;

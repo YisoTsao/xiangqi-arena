@@ -37,3 +37,38 @@ test('首頁可以走進麻將館', async ({ page }) => {
   await expect(page).toHaveURL(/\/club$/);
   await expect(page.getByTestId('club-enter')).toBeVisible();
 });
+
+/**
+ * 2F 牌桌館：1F 樓梯口上樓 → 帶我去空桌（最近的是暗棋桌）→ 入座 → 返回桌邊。
+ */
+test('走樓梯上 2F 牌桌館入座下棋，離桌後回到 2F', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto('/club?hour=20&q=low&spawn=stairs');
+  const root = page.getByTestId('club-root');
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 60_000 });
+  await expect(page.getByTestId('club-prompt')).toContainText('上樓到 2F 牌桌館', {
+    timeout: 60_000,
+  });
+
+  await page.getByTestId('club-act').click();
+  await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館', { timeout: 30_000 });
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 30_000 });
+  await expect(page.getByTestId('club-prompt')).toContainText('下樓到 1F 麻將館', {
+    timeout: 60_000,
+  });
+
+  // 樓梯口有下樓提示時「帶我去空桌」不顯示：先往右走開一步再找桌子
+  await page.keyboard.down('KeyD');
+  await page.waitForTimeout(800);
+  await page.keyboard.up('KeyD');
+  await page.getByTestId('club-find-table').click({ timeout: 60_000 });
+  await expect(page.getByTestId('club-prompt')).toContainText('棋桌', { timeout: 90_000 });
+
+  await page.getByTestId('club-act').click();
+  await expect(root).toHaveAttribute('data-mode', 'seated');
+  await expect(page.getByTestId('club-table')).toHaveAttribute('data-game', 'chess');
+  await expect(page.getByTestId('local-start')).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(root).toHaveAttribute('data-mode', 'walk');
+  await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館');
+});

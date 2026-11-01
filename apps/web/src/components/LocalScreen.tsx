@@ -12,8 +12,15 @@ import { Segmented } from './ui/segmented';
 import { Logo } from './Logo';
 import { useLocalGame } from '@/lib/local/localGame';
 
-export function LocalScreen({ initialMode }: { initialMode: XiangqiMode }) {
+interface Props {
+  initialMode: XiangqiMode;
+  /** 離開時呼叫（例如回到 3D 俱樂部的棋桌旁）；省略時回首頁 */
+  onExit?: () => void;
+}
+
+export function LocalScreen({ initialMode, onExit }: Props) {
   const router = useRouter();
+  const leave = onExit ?? (() => router.push('/'));
   const { snapshot, snapshotAt, start, send, stop } = useLocalGame();
   const [mode, setMode] = useState<XiangqiMode>(initialMode);
   const [tc, setTc] = useState<TimeControlId>('unlimited');
@@ -28,7 +35,7 @@ export function LocalScreen({ initialMode }: { initialMode: XiangqiMode }) {
         variant="local"
         onExit={() => {
           stop();
-          router.push('/');
+          leave();
         }}
       />
     );
@@ -38,7 +45,7 @@ export function LocalScreen({ initialMode }: { initialMode: XiangqiMode }) {
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col gap-6 px-5 py-8">
       <header className="flex items-center justify-between">
         <Logo size="sm" />
-        <Button variant="ghost" onClick={() => router.push('/')}>
+        <Button variant="ghost" onClick={leave}>
           <ArrowLeft /> 返回
         </Button>
       </header>
