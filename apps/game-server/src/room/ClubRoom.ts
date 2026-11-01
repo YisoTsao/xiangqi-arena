@@ -233,8 +233,8 @@ export class ClubRoom extends Room {
     for (const m of this.members.values()) {
       if (!m.dirty) continue;
       m.dirty = false;
-      const { id, floor, x, z, yaw, moving } = m.player;
-      states.push({ id, floor, x, z, yaw, moving });
+      const { id, floor, x, z, yaw, moving, running } = m.player;
+      states.push({ id, floor, x, z, yaw, moving, running });
     }
     if (states.length) this.broadcast(CLUB_MSG.states, states);
   }

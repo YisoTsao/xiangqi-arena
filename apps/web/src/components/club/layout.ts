@@ -7,6 +7,8 @@
  * 這個檔案只有資料與純函式（碰撞、尋路），不碰 three.js，方便測試。
  */
 
+import { DISTRICT, DISTRICT_LAMPS, colliderOf, occluderOf } from './district';
+
 export type Vec2 = readonly [x: number, z: number];
 
 /** 樓層：1 = 街口與 1F 麻將館（同一個平面），2 = 2F 牌桌館 */
@@ -36,12 +38,14 @@ const centered = (x: number, z: number, w: number, d: number): Box =>
 export const PLAYER_RADIUS = 0.3;
 /** 走路速度（公尺／秒） */
 export const WALK_SPEED = 3.6;
+/** 按住 Shift 跑步的速度倍率 */
+export const RUN_MULTIPLIER = 1.85;
 
 export const HALL = { minX: -9, maxX: 9, minZ: -12, maxZ: 0, height: 3.6 } as const;
 export const DOOR = { minX: -1, maxX: 1, height: 2.4 } as const;
 export const WALL = 0.3;
-/** 可走的範圍（街道兩端與馬路對面） */
-export const BOUNDS = box(-22, 22, -12, 9.5);
+/** 可走的範圍：整個樂町街區（主街、兩條側街、後巷、對面的廣場，見 district.ts） */
+export const BOUNDS = box(-72, 72, -44, 46);
 
 /** 開場時角色站的位置：正門前的騎樓 */
 export const SPAWN: Vec2 = [0, 2.2];
@@ -139,9 +143,9 @@ export const COLLIDERS: readonly Box[] = [
   box(HALL.minX - WALL, HALL.minX, HALL.minZ - WALL, 0),
   box(HALL.maxX, HALL.maxX + WALL, HALL.minZ - WALL, 0),
   box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, HALL.minZ),
-  // 左右鄰居的店面（進不去）
-  box(-30, HALL.minX - WALL, -13, 0),
-  box(HALL.maxX + WALL, 30, -13, 0),
+  // 左右鄰居的店面（進不去；Street.tsx 的店面 x ∈ ±[9.3, 26]、深 12m）
+  box(-26, HALL.minX - WALL, -12.1, 0),
+  box(HALL.maxX + WALL, 26, -12.1, 0),
   // 室內
   ...TABLES.flatMap((t) => [
     centered(t[0], t[1], TABLE_SIZE, TABLE_SIZE),
@@ -164,6 +168,30 @@ export const COLLIDERS: readonly Box[] = [
   centered(MAILBOX[0], MAILBOX[1], 0.9, 0.45),
   ...SCOOTERS.map((p) => centered(p[0], p[1], 0.5, 1.6)),
   ...POLES.map((p) => centered(p[0], p[1], 0.35, 0.35)),
+  // 樂町街區的大樓、樹、車、圍籬
+  ...DISTRICT.flatMap((p) => colliderOf(p) ?? []),
+  ...DISTRICT_LAMPS.map((p) => centered(p[0], p[1], 0.3, 0.3)),
+];
+
+/** 鏡頭不能穿過的方塊（top = 頂端高度，相對該樓層地板） */
+export interface Occluder extends Box {
+  top: number;
+}
+
+/** 在街上時：街區大樓、鄰居店面、俱樂部整棟 */
+export const OCCLUDERS_OUTSIDE: readonly Occluder[] = [
+  ...DISTRICT.flatMap((p) => occluderOf(p) ?? []),
+  { ...box(-26, HALL.minX - WALL, -12.1, 0), top: 10.8 },
+  { ...box(HALL.maxX + WALL, 26, -12.1, 0), top: 14.4 },
+  { ...box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, 0.15), top: 14.4 },
+];
+
+/** 在室內時：只有四面牆（剖面娃娃屋沒有天花板，鏡頭高過牆就能往下看） */
+export const OCCLUDERS_INSIDE: readonly Occluder[] = [
+  { ...box(HALL.minX - WALL, HALL.maxX + WALL, -WALL / 2, WALL / 2), top: HALL.height },
+  { ...box(HALL.minX - WALL, HALL.minX, HALL.minZ - WALL, 0), top: HALL.height },
+  { ...box(HALL.maxX, HALL.maxX + WALL, HALL.minZ - WALL, 0), top: HALL.height },
+  { ...box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, HALL.minZ), top: HALL.height },
 ];
 
 // ── 2F 牌桌館 ──────────────────────────────────────────
@@ -397,8 +425,9 @@ export function slide(from: Vec2, dx: number, dz: number, floor: Floor = 1): Vec
   return [x, z];
 }
 
-/** 室內判定：1F 過了門口那條線；2F 一律在室內 */
-export const isInside = ([, z]: Vec2, floor: Floor = 1): boolean => floor === 2 || z < 0.3;
+/** 室內判定：1F 在館內（過了門口那條線）；2F 一律在室內 */
+export const isInside = ([x, z]: Vec2, floor: Floor = 1): boolean =>
+  floor === 2 || (z < 0.3 && z > HALL.minZ - WALL && x > HALL.minX - WALL && x < HALL.maxX + WALL);
 
 // ── 點地面尋路（0.5m 格子上的 A*） ─────────────────────
 
@@ -467,6 +496,53 @@ export function clearLine(a: Vec2, b: Vec2, floor: Floor = 1): boolean {
   return true;
 }
 
+/** A* 用的最小堆積（值 = 格子編號、鍵 = f 分數） */
+class MinHeap {
+  private ids: number[] = [];
+  private keys: number[] = [];
+  get size(): number {
+    return this.ids.length;
+  }
+  push(id: number, key: number): void {
+    const { ids, keys } = this;
+    let i = ids.length;
+    ids.push(id);
+    keys.push(key);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (keys[p]! <= key) break;
+      ids[i] = ids[p]!;
+      keys[i] = keys[p]!;
+      i = p;
+    }
+    ids[i] = id;
+    keys[i] = key;
+  }
+  pop(): number {
+    const { ids, keys } = this;
+    const top = ids[0]!;
+    const lastId = ids.pop()!;
+    const lastKey = keys.pop()!;
+    const n = ids.length;
+    if (n > 0) {
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        if (l >= n) break;
+        const r = l + 1;
+        const c = r < n && keys[r]! < keys[l]! ? r : l;
+        if (keys[c]! >= lastKey) break;
+        ids[i] = ids[c]!;
+        keys[i] = keys[c]!;
+        i = c;
+      }
+      ids[i] = lastId;
+      keys[i] = lastKey;
+    }
+    return top;
+  }
+}
+
 /**
  * 從 from 走到 to 的路徑（不含起點）。走不到目標時改走到最近的可走點；完全沒路回傳空陣列。
  */
@@ -486,15 +562,12 @@ export function findPath(from: Vec2, to: Vec2, floor: Floor = 1): Vec2[] {
   const gc = goal % COLS;
   const gr = Math.floor(goal / COLS);
   const h = (i: number) => Math.hypot((i % COLS) - gc, Math.floor(i / COLS) - gr);
-  // 格子不多（約 4000 格），用簡單的陣列當 open set 就夠快
-  const open: number[] = [start];
+  // 街區變大後格子有五萬多格：open set 用二元堆積
+  const open = new MinHeap();
   gScore[start] = 0;
-  while (open.length > 0) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) {
-      if (gScore[open[i]!]! + h(open[i]!) < gScore[open[bi]!]! + h(open[bi]!)) bi = i;
-    }
-    const cur = open.splice(bi, 1)[0]!;
+  open.push(start, h(start));
+  while (open.size > 0) {
+    const cur = open.pop();
     if (cur === goal) break;
     if (closed[cur]) continue;
     closed[cur] = 1;
@@ -514,7 +587,7 @@ export function findPath(from: Vec2, to: Vec2, floor: Floor = 1): Vec2[] {
         if (cost < gScore[n]!) {
           gScore[n] = cost;
           came[n] = cur;
-          open.push(n);
+          open.push(n, cost + h(n));
         }
       }
     }

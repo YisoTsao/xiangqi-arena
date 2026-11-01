@@ -23,9 +23,11 @@ import {
   ALL_INTERACTABLES,
   ELEVATOR_LANDING,
   STAIRS_LANDING_2F,
+  isInside,
   type Floor,
   type Interactable,
 } from './layout';
+import { SIDE_STREET_X } from './district';
 import { TRAVEL_FADE_MS, player, useClub, walkToNearestTable } from './store';
 import { ChatPanel, OnlineCount } from './ChatPanel';
 import { PresenceOverlay } from './PresenceOverlay';
@@ -64,6 +66,11 @@ const SPAWNS: Record<string, { pos: [number, number]; yaw: number; floor?: Floor
   '2f': { pos: [0.2, -6], yaw: Math.PI, floor: 2 },
   '2f-chess': { pos: [-4.4, -1.6], yaw: Math.PI, floor: 2 },
   '2f-cards': { pos: [3, -1.6], yaw: Math.PI, floor: 2 },
+  // 樂町街區：廣場、後巷、東側街、擴建預定地
+  plaza: { pos: [0, 18], yaw: 0 },
+  alley: { pos: [0, -16], yaw: Math.PI },
+  east: { pos: [SIDE_STREET_X, -8], yaw: Math.PI },
+  'lot-b': { pos: [41, 25], yaw: Math.PI / 2 },
 };
 
 /** 電梯面板：1F、2F 可以去，3F 以上整修中 */
@@ -289,7 +296,8 @@ export function ClubScreen() {
     if (spawn) {
       player.pos = [...spawn.pos];
       player.yaw = spawn.yaw;
-      useClub.setState({ mode: 'walk', inside: true, floor: spawn.floor ?? 1 });
+      const floor = spawn.floor ?? 1;
+      useClub.setState({ mode: 'walk', inside: isInside(spawn.pos, floor), floor });
     }
   }, [reset]);
 
@@ -450,8 +458,11 @@ export function ClubScreen() {
               )}
             >
               <Footprints className="size-3" />
-              <span className="hidden sm:inline">WASD／方向鍵走路，</span>
-              點地面走過去，點桌子直接走到桌邊
+              <span className="hidden sm:inline">
+                WASD 走路、Shift 跑步、拖曳轉視角、滾輪縮放，
+              </span>
+              <span className="sm:hidden">拖曳轉視角、雙指縮放，</span>
+              點地面走過去
             </div>
           </div>
         </>

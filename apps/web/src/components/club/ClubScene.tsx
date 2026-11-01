@@ -14,13 +14,18 @@ import {
   type HemisphereLight,
   type PerspectiveCamera,
 } from 'three';
-import { Character, PLAYER_OUTFIT, animateWalk } from './Character';
+import { Avatar } from './Avatar';
+import { Character, PLAYER_OUTFIT } from './Character';
+import { District, preloadDistrict } from './District';
 import { ClubPresence } from './RemotePlayers';
 import { useInteriorWindowClock } from './InteriorWindow';
 import { gameHourAt, lightingAt } from './clock';
 import { Effects } from './Effects';
 import {
   CAMERA_YAW,
+  OCCLUDERS_INSIDE,
+  OCCLUDERS_OUTSIDE,
+  RUN_MULTIPLIER,
   WALK_SPEED,
   floorY,
   inputToWorld,
@@ -28,16 +33,37 @@ import {
   isInside,
   nearestInteractable,
   slide,
+  type Occluder,
   type Vec2,
 } from './layout';
 import { CardHall } from './CardHall';
 import { MahjongHall } from './MahjongHall';
 import { NeonContext, QualityContext, useQuality, type Quality } from './props';
 import { Street } from './Street';
-import { player, transition, useClub, walkTo } from './store';
+import { player, pointerGuard, transition, useClub, walkTo } from './store';
 
-/** 鏡頭目前的水平角度（平滑過的），方向鍵依它轉換 */
-const view = { yaw: CAMERA_YAW.outside };
+/**
+ * 自由視角的跟隨鏡頭：拖曳畫面轉 yaw／pitch，滾輪或雙指縮放改 dist。
+ * 方向鍵依 yaw 轉換（W 永遠是「往畫面裡面走」）。
+ */
+export const orbit = {
+  yaw: CAMERA_YAW.outside as number,
+  pitch: 0.55,
+  dist: 8.5,
+};
+export const ORBIT_LIMITS = { minPitch: 0.06, maxPitch: 1.38, minDist: 2.2, maxDist: 22 } as const;
+
+function resetOrbit() {
+  orbit.yaw = CAMERA_YAW.outside;
+  orbit.pitch = 0.55;
+  orbit.dist = 8.5;
+}
+
+// 街區的 GLB 一進頁面就開始下載（開場選單停留的時間通常就夠載完）
+if (typeof window !== 'undefined') preloadDistrict();
+
+/** Shift：跑步 */
+const runKeys = new Set<string>();
 
 /**
  * 方向鍵：記下每個鍵按下的時間，放開時把「這一格裡按住的時間」留給下一格結算。
@@ -360,11 +386,11 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
 function stepPlayer(h: number, [mx, mz]: [number, number]): boolean {
   let dx = 0;
   let dz = 0;
-  const step = WALK_SPEED * h;
+  const step = WALK_SPEED * h * (player.running ? RUN_MULTIPLIER : 1);
   if (mx || mz) {
     player.path = [];
     const amount = Math.min(1, Math.hypot(mx, mz));
-    const [wx, wz] = inputToWorld(mx, mz, view.yaw);
+    const [wx, wz] = inputToWorld(mx, mz, orbit.yaw);
     dx = wx * step * amount;
     dz = wz * step * amount;
   } else if (player.path.length > 0) {
@@ -402,6 +428,7 @@ function Player() {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') runKeys.add(e.code);
       if (!(e.code in KEY_DIRS)) return;
       const target = e.target as HTMLElement | null;
       if (target?.closest('input, textarea, select')) return;
@@ -410,6 +437,7 @@ function Player() {
       if (!held.has(e.code)) held.set(e.code, performance.now());
     };
     const up = (e: KeyboardEvent) => {
+      runKeys.delete(e.code);
       const at = held.get(e.code);
       if (at === undefined) return;
       held.delete(e.code);
@@ -420,6 +448,7 @@ function Player() {
     const clear = () => {
       held.clear();
       tapped.length = 0;
+      runKeys.clear();
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
@@ -432,7 +461,7 @@ function Player() {
     };
   }, []);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const g = ref.current;
     if (!g) return;
     const dt = Math.min(delta, 0.1);
@@ -443,6 +472,8 @@ function Player() {
     const frame = Math.min(delta, 0.3);
     const input = keyInput(now, Math.max(1, frame * 1000));
     lastFrameAt.current = now;
+    // 按住 Shift 跑步；點很遠的地方（剩下的路超過 10m）也自動用跑的
+    player.running = runKeys.size > 0 || remainingPath() > 10;
     if (club.mode === 'walk') {
       // 幀率低時分成小步走，速度不變也不會穿牆
       let left = frame;
@@ -455,21 +486,38 @@ function Player() {
       club.setInside(isInside(player.pos, club.floor));
     }
 
-    player.moving = moving;
+    // 一兩格沒移動（例如剛好抵達中途點）不要馬上切回站立動畫
+    walk.current = moving ? 0.12 : Math.max(0, walk.current - dt);
+    player.moving = moving || walk.current > 0;
+    if (!player.moving) player.running = false;
     g.position.set(player.pos[0], floorY(club.floor), player.pos[1]);
     // 轉身取最短角度
     let diff = player.yaw - g.rotation.y;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     g.rotation.y += diff * Math.min(1, dt * 14);
-    walk.current += ((moving ? 1 : 0) - walk.current) * Math.min(1, dt * 10);
-    animateWalk(g, state.clock.elapsedTime, walk.current);
   });
 
   return (
     <group visible={visible}>
-      <Character ref={ref} outfit={PLAYER_OUTFIT} />
+      <Avatar
+        ref={ref}
+        color={player.color}
+        motion={player}
+        fallback={<Character outfit={PLAYER_OUTFIT} />}
+      />
     </group>
   );
+}
+
+/** 尋路剩下的距離 */
+function remainingPath(): number {
+  let d = 0;
+  let prev: Vec2 = player.pos;
+  for (const p of player.path) {
+    d += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    prev = p;
+  }
+  return d;
 }
 
 /**
@@ -503,15 +551,6 @@ const titleShot = (aspect: number) => (aspect < 0.9 ? TITLE_TALL : TITLE_WIDE);
 const TITLE_POS = TITLE_WIDE.pos;
 const INTRO_SECONDS = 2;
 
-/**
- * 3/4 斜俯視跟隨鏡頭（約 45°）。室外拉遠、角度小，讓招牌入鏡；室內轉到斜角、略高，
- * 看進剖面娃娃屋。直向手機再拉遠一點。
- */
-const FOLLOW = {
-  outside: { dist: 7.4, height: 5.2, lookAhead: 1.8 },
-  inside: { dist: 6.4, height: 6.6, lookAhead: 0.9 },
-} as const;
-
 const FOLLOW_FOV = 40;
 
 /** 依開場構圖的比例 m 設定 fov 與 view offset；沒變就不重算投影矩陣 */
@@ -535,6 +574,119 @@ function applyFraming(
   camera.updateProjectionMatrix();
 }
 
+/** 鏡頭看的點：角色胸口 */
+const PIVOT_HEIGHT = 1.15;
+const CAMERA_PAD = 0.25;
+
+/**
+ * 從 pivot 往鏡頭方向走，碰到牆或大樓就把鏡頭拉近，免得鏡頭鑽進牆裡、角色被擋住。
+ * 回傳可用的最遠距離。
+ */
+function clampDistance(
+  pivot: Vector3,
+  dir: Vector3,
+  want: number,
+  occluders: readonly Occluder[],
+  y0: number,
+): number {
+  const N = 28;
+  for (let i = 1; i <= N; i++) {
+    const t = (i / N) * want;
+    const x = pivot.x + dir.x * t;
+    const y = pivot.y + dir.y * t;
+    const z = pivot.z + dir.z * t;
+    for (const o of occluders) {
+      if (
+        x > o.minX - CAMERA_PAD &&
+        x < o.maxX + CAMERA_PAD &&
+        z > o.minZ - CAMERA_PAD &&
+        z < o.maxZ + CAMERA_PAD &&
+        y < y0 + o.top + CAMERA_PAD
+      ) {
+        return Math.max(ORBIT_LIMITS.minDist * 0.6, ((i - 1) / N) * want);
+      }
+    }
+  }
+  return want;
+}
+
+/**
+ * 拖曳畫面轉視角（滑鼠任一鍵或單指）、滾輪或雙指縮放。
+ * 拖超過 6px 才算拖曳，點一下仍然是「走過去」。
+ */
+function useOrbitControls() {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const el = gl.domElement;
+    const pts = new Map<number, { x: number; y: number }>();
+    let start: { x: number; y: number } | null = null;
+    let pinch = 0;
+    const active = () => useClub.getState().mode === 'walk';
+    const clampPitch = (p: number) =>
+      Math.max(ORBIT_LIMITS.minPitch, Math.min(ORBIT_LIMITS.maxPitch, p));
+    const clampDist = (d: number) =>
+      Math.max(ORBIT_LIMITS.minDist, Math.min(ORBIT_LIMITS.maxDist, d));
+
+    const down = (e: PointerEvent) => {
+      pointerGuard.dragged = false;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      start = { x: e.clientX, y: e.clientY };
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      }
+    };
+    const move = (e: PointerEvent) => {
+      const prev = pts.get(e.pointerId);
+      if (!prev || !active()) return;
+      const cur = { x: e.clientX, y: e.clientY };
+      pts.set(e.pointerId, cur);
+      if (pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+        if (pinch > 0 && d > 0) orbit.dist = clampDist(orbit.dist * (pinch / d));
+        pinch = d;
+        pointerGuard.dragged = true;
+        return;
+      }
+      if (start && !pointerGuard.dragged) {
+        if (Math.hypot(cur.x - start.x, cur.y - start.y) < 6) return;
+        pointerGuard.dragged = true;
+        el.setPointerCapture?.(e.pointerId);
+      }
+      orbit.yaw -= (cur.x - prev.x) * 0.0065;
+      orbit.pitch = clampPitch(orbit.pitch + (cur.y - prev.y) * 0.0045);
+    };
+    const up = (e: PointerEvent) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = 0;
+      if (pts.size === 0) start = null;
+      // 讓這次放開後的 click 事件先看到 dragged，再清掉
+      if (pointerGuard.dragged) setTimeout(() => (pointerGuard.dragged = false), 0);
+    };
+    const wheel = (e: WheelEvent) => {
+      if (!active()) return;
+      e.preventDefault();
+      orbit.dist = clampDist(orbit.dist * Math.exp(e.deltaY * 0.0012));
+    };
+    const menu = (e: Event) => e.preventDefault();
+    el.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', wheel, { passive: false });
+    el.addEventListener('contextmenu', menu);
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      el.removeEventListener('wheel', wheel);
+      el.removeEventListener('contextmenu', menu);
+    };
+  }, [gl]);
+}
+
 function CameraRig() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
@@ -544,25 +696,53 @@ function CameraRig() {
   const intro = useRef<{ t: number; fromPos: Vector3; fromLook: Vector3 } | null>(null);
   const tmpPos = useRef(new Vector3());
   const tmpLook = useRef(new Vector3());
+  const tmpDir = useRef(new Vector3());
+  /** 碰撞後實際用的距離（拉近立刻、放遠慢慢） */
+  const dist = useRef(orbit.dist);
   const lastFloor = useRef(1);
+  useOrbitControls();
+  // 網址加 ?cam=yaw,pitch,dist 固定鏡頭（截圖比對用）
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get('cam');
+    const [y, p, d] = (raw ?? '').split(',').map(Number);
+    if (raw && Number.isFinite(y) && Number.isFinite(p) && Number.isFinite(d)) {
+      orbit.yaw = y!;
+      orbit.pitch = p!;
+      orbit.dist = d!;
+      dist.current = d!;
+    }
+  }, []);
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
     const { mode, inside, floor } = useClub.getState();
+    if (mode === 'title') resetOrbit();
     const y0 = floorY(floor);
-    const target = inside ? CAMERA_YAW.inside : CAMERA_YAW.outside;
-    view.yaw += (target - view.yaw) * (mode === 'walk' ? 1 - Math.exp(-dt * 3) : 1);
-    const f = inside ? FOLLOW.inside : FOLLOW.outside;
-    const far = size.width / Math.max(1, size.height) < 1 ? 1.4 : 1;
+    // 直向手機畫面窄：預設再拉遠一點
+    const far = size.width / Math.max(1, size.height) < 1 ? 1.3 : 1;
     const [px, pz] = player.pos;
-    const sy = Math.sin(view.yaw);
-    const cy = Math.cos(view.yaw);
-    const followPos = tmpPos.current.set(
-      px + sy * f.dist * far,
-      y0 + f.height * far,
-      pz + cy * f.dist * far,
+    const followLook = tmpLook.current.set(px, y0 + PIVOT_HEIGHT, pz);
+    const cp = Math.cos(orbit.pitch);
+    const dir = tmpDir.current.set(
+      Math.sin(orbit.yaw) * cp,
+      Math.sin(orbit.pitch),
+      Math.cos(orbit.yaw) * cp,
     );
-    const followLook = tmpLook.current.set(px - sy * f.lookAhead, y0 + 0.9, pz - cy * f.lookAhead);
+    const want = orbit.dist * far;
+    const allowed = clampDistance(
+      followLook,
+      dir,
+      want,
+      inside ? OCCLUDERS_INSIDE : OCCLUDERS_OUTSIDE,
+      y0,
+    );
+    dist.current =
+      allowed < dist.current
+        ? allowed
+        : dist.current + (allowed - dist.current) * (1 - Math.exp(-dt * 4));
+    const followPos = tmpPos.current.copy(followLook).addScaledVector(dir, dist.current);
+    // 不鑽到地板下
+    followPos.y = Math.max(followPos.y, y0 + 0.35);
     const shot = titleShot(size.width / Math.max(1, size.height));
 
     if (mode === 'title') {
@@ -592,7 +772,8 @@ function CameraRig() {
       look.current.copy(followLook);
       titleMix.current = 0;
     } else {
-      const k = 1 - Math.exp(-dt * 5);
+      // 位置跟得緊一點，拖曳轉視角時才不會覺得延遲
+      const k = 1 - Math.exp(-dt * 12);
       camera.position.lerp(followPos, k);
       look.current.lerp(followLook, k);
       titleMix.current = 0;
@@ -613,6 +794,7 @@ function ClickGround() {
       position-y={floorY(floor) + 0.02}
       onClick={(e) => {
         e.stopPropagation();
+        if (pointerGuard.dragged) return;
         walkTo([e.point.x, e.point.z]);
       }}
     >
@@ -627,12 +809,14 @@ function World({ hour }: { hour?: number }) {
   const floor = useClub((s) => s.floor);
   const dbg = typeof window !== 'undefined' ? window.location.search : '';
   const select = (id: string) => {
+    if (pointerGuard.dragged) return;
     const it = interactablesOf(useClub.getState().floor).find((x) => x.id === id);
     if (it) walkTo(it.approach);
   };
   return (
     <DayNight hour={hour}>
       {!dbg.includes('nostreet') && <Street inside={inside || floor === 2} />}
+      {!dbg.includes('nodistrict') && <District />}
       {!dbg.includes('nohall') && floor === 1 && <MahjongHall onSelect={select} inside={inside} />}
       {!dbg.includes('nohall') && floor === 2 && <CardHall onSelect={select} />}
       <ClickGround />

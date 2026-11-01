@@ -56,10 +56,10 @@ function Surface({
 
 /** 水泥緣石：方塊 + 水泥貼圖，前緣有一條漆過的黃線 */
 function Curb({ z }: { z: number }) {
-  const maps = usePbr('concrete', [120, 0.6], 1);
+  const maps = usePbr('concrete', [150, 0.6], 1);
   return (
     <mesh position={[0, 0.07, z]} castShadow={false} receiveShadow>
-      <boxGeometry args={[120, 0.14, 0.24]} />
+      <boxGeometry args={[150, 0.14, 0.24]} />
       <meshStandardMaterial {...maps} color="#d8cfbf" />
     </mesh>
   );
@@ -73,15 +73,15 @@ function Ground({ rain }: { rain: boolean }) {
   return (
     <group>
       {/* 騎樓與人行道：20cm 陶磚格紋 */}
-      {!rain && <Surface set="arcade_tile" size={[120, 3.5]} tile={1.2} position={[0, 0, 1.75]} />}
+      {!rain && <Surface set="arcade_tile" size={[150, 3.5]} tile={1.2} position={[0, 0, 1.75]} />}
       {/* 遠處地面與對面人行道 */}
-      <Surface set="concrete" size={[160, 120]} tile={3} position={[0, -0.01, 0]} color="#a89a8a" />
+      <Surface set="concrete" size={[220, 170]} tile={3} position={[0, -0.01, 0]} color="#a89a8a" />
       {!rain && (
         <>
           {/* 馬路：低窪處積水，粗糙度低，夜晚會映出招牌與路燈 */}
           <Surface
             set="asphalt"
-            size={[120, 7.2]}
+            size={[150, 7.2]}
             tile={4}
             position={[0, 0.001, 7.1]}
             envMapIntensity={1.4}
@@ -91,14 +91,14 @@ function Ground({ rain }: { rain: boolean }) {
             <Surface
               key={z}
               set="concrete"
-              size={[120, 0.32]}
+              size={[150, 0.32]}
               tile={1}
               position={[0, 0.003, z]}
               color="#7d756c"
             />
           ))}
-          {Array.from({ length: 24 }, (_, i) => (
-            <mesh key={i} rotation-x={-Math.PI / 2} position={[-46 + i * 4, 0.006, 7.1]}>
+          {Array.from({ length: 36 }, (_, i) => (
+            <mesh key={i} rotation-x={-Math.PI / 2} position={[-70 + i * 4, 0.006, 7.1]}>
               <planeGeometry args={[2, 0.14]} />
               <meshStandardMaterial color="#e2d29e" roughness={0.55} />
             </mesh>
@@ -984,7 +984,8 @@ function Skyline() {
       Array.from({ length: 14 }, (_, i) => {
         const x = -42 + i * 6.4 + ((i * 37) % 5);
         const h = 14 + ((i * 53) % 17);
-        return { x, h, w: 5 + ((i * 19) % 3), z: -26 - ((i * 7) % 8) };
+        // 街區變大後往後推到可走範圍外（z < -50），當作更遠的城市剪影
+        return { x, h: h + 10, w: 5 + ((i * 19) % 3), z: -52 - ((i * 7) % 8) };
       }),
     [],
   );

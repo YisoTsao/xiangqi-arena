@@ -68,6 +68,8 @@ export const ClubMoveSchema = z.object({
   z: Coord,
   yaw: z.number().finite(),
   moving: z.boolean(),
+  /** 按住 Shift 或點很遠的地方：跑步動畫 */
+  running: z.boolean().optional(),
 });
 export type ClubMove = z.infer<typeof ClubMoveSchema>;
 
@@ -94,7 +96,7 @@ export interface ClubPlayer extends ClubMove {
   seat: number | null;
 }
 
-export type ClubState = Pick<ClubPlayer, 'id' | 'floor' | 'x' | 'z' | 'yaw' | 'moving'>;
+export type ClubState = Pick<ClubPlayer, 'id' | 'floor' | 'x' | 'z' | 'yaw' | 'moving' | 'running'>;
 
 export interface ClubChatMessage {
   id: string;

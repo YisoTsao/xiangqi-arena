@@ -15,8 +15,6 @@ import {
   type ClubWelcome,
 } from '@xiangqi-arena/game-protocol';
 import { gameServerUrl } from '@/lib/net/serverUrl';
-import type { Outfit } from './Character';
-import { PLAYER_OUTFIT } from './Character';
 import { ALL_INTERACTABLES } from './layout';
 import { player, useClub } from './store';
 
@@ -42,6 +40,9 @@ export interface RemoteEntry {
   z: number;
   yaw: number;
   moving: boolean;
+  running?: boolean;
+  /** Avatar 每格讀的動作狀態 */
+  sitting?: boolean;
   /** 畫面上的位置（RemotePlayers 每格更新） */
   rx: number;
   rz: number;
@@ -106,21 +107,6 @@ export function isTableFull(tableId: string): boolean {
   return others.length >= clubTableCapacity(tableId);
 }
 
-/** 依玩家主色換掉預設角色的帽子與上衣顏色 */
-export function outfitForColor(color: string): Outfit {
-  return { ...PLAYER_OUTFIT, hat: color, stripe: color, shirt: mix(color, '#ffffff', 0.55) };
-}
-
-function mix(a: string, b: string, t: number): string {
-  const pa = parseInt(a.slice(1), 16);
-  const pb = parseInt(b.slice(1), 16);
-  const ch = (s: number) =>
-    Math.round(((pa >> s) & 255) * (1 - t) + ((pb >> s) & 255) * t)
-      .toString(16)
-      .padStart(2, '0');
-  return `#${ch(16)}${ch(8)}${ch(0)}`;
-}
-
 function readSession(key: string): string | null {
   try {
     return window.sessionStorage.getItem(key);
@@ -151,9 +137,26 @@ let connecting = false;
 function upsertRemote(p: ClubState): void {
   const r = remotes.get(p.id);
   if (r) {
-    Object.assign(r, { floor: p.floor, x: p.x, z: p.z, yaw: p.yaw, moving: p.moving });
+    Object.assign(r, {
+      floor: p.floor,
+      x: p.x,
+      z: p.z,
+      yaw: p.yaw,
+      moving: p.moving,
+      running: p.running ?? false,
+    });
   } else {
-    remotes.set(p.id, { ...p, rx: p.x, rz: p.z, rfloor: p.floor });
+    remotes.set(p.id, {
+      floor: p.floor,
+      x: p.x,
+      z: p.z,
+      yaw: p.yaw,
+      moving: p.moving,
+      running: p.running ?? false,
+      rx: p.x,
+      rz: p.z,
+      rfloor: p.floor,
+    });
   }
 }
 
@@ -279,8 +282,7 @@ async function connect(): Promise<void> {
     client ??= new Client(gameServerUrl());
     const name = readSession(NAME_KEY) ?? undefined;
     // 角色若已有自己的顏色（每個分頁隨機一色），就用它，別人看到的跟自己看到的一樣
-    const own = (player as { color?: unknown }).color;
-    const color = typeof own === 'string' && /^#[0-9a-fA-F]{6}$/.test(own) ? own : undefined;
+    const color = /^#[0-9a-fA-F]{6}$/.test(player.color) ? player.color : undefined;
     const r = await client.joinOrCreate(CLUB_ROOM_NAME, {
       protocol: CLUB_PROTOCOL_VERSION,
       name,
@@ -310,6 +312,7 @@ function sendState(): void {
     z: Math.round(player.pos[1] * 100) / 100,
     yaw: Math.round(player.yaw * 100) / 100,
     moving: player.moving,
+    running: player.moving && player.running,
   };
   const key = JSON.stringify(msg);
   if (key === lastSent) return;
