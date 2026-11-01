@@ -123,12 +123,18 @@ function Walls() {
   return (
     <group>
       <WallPanel length={W + 0.6} position={[0, 0, HALL.minZ - 0.15]} ry={0} />
-      <WallPanel length={D} position={[HALL.minX - 0.15, 0, -D / 2]} ry={Math.PI / 2} />
+      <WallPanel
+        length={D}
+        position={[HALL.minX - 0.15, 0, -D / 2]}
+        ry={Math.PI / 2}
+        side
+      />
       <WallPanel
         length={D}
         position={[HALL.maxX + 0.15, 0, -D / 2]}
         ry={-Math.PI / 2}
         height={CUT}
+        side
       />
       <WallPanel length={W + 0.6} position={[0, 0, 0]} ry={Math.PI} height={CUT} />
       {/* 窗：左牆兩扇、後牆一扇 */}
