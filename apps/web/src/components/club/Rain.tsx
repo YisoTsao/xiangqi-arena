@@ -97,9 +97,9 @@ const LIGHT_GLSL = /* glsl */ `
 
 // ── 濕街面 + 平面反射 ─────────────────────────────────────
 
-/** 街面平面：x 方向 [-60, 60]，z 方向 [0, STREET_V]；uv 直接用世界座標換算 */
+/** 街面平面：x 方向 [-75, 75]，z 方向 [0, STREET_V]；uv 直接用世界座標換算 */
 function streetGeometry(): BufferGeometry {
-  const g = new PlaneGeometry(120, STREET_V, 1, 1);
+  const g = new PlaneGeometry(150, STREET_V, 1, 1);
   g.rotateX(-Math.PI / 2);
   g.translate(0, 0, STREET_V / 2);
   const pos = g.attributes.position as BufferAttribute;

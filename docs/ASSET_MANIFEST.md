@@ -67,6 +67,9 @@ v1 是程式產生的無縫貼圖（albedo + normal + ORM），比之前只有�
 | `CHAR_npc_aLe`    | Phase 3 | 茶櫃台店員阿樂（圍裙）                                                           | TODO |
 | `CHAR_npc_patron` | Phase 3 | 一般客人原型（換色、換髮型）                                                     | TODO |
 
+> 目前先用 Kenney Mini Characters（CC0）當玩家與 NPC（`Avatar.tsx`），並用 Kenney City Kit 等 CC0 模型擴建樂町街區（`district.ts`）。
+> 來源與授權逐一列在 [`apps/web/public/club/assets/CREDITS.md`](../apps/web/public/club/assets/CREDITS.md)。自製角色交件後換掉 `Avatar` 的網址即可。
+
 ## 5. 取得方式與授權
 
 - **自己做（建議）**：Blender 依 [ART_BIBLE_LOBBY.md](ART_BIBLE_LOBBY.md) §7 製作，授權最乾淨。街口一輪（§2）約 6～9 人日。

@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Object3D, type AmbientLight, type InstancedMesh, type PointLight } from 'three';
 import { Bake } from './Bake';
+import { Avatar, IDLE } from './Avatar';
 import { Character, A_LE_OUTFIT } from './Character';
 import {
   A_LE,
@@ -1050,7 +1051,7 @@ export function MahjongHall({
       </Bake>
       <TileWalls />
       <group position={[A_LE[0], 0, A_LE[1]]} rotation-y={-Math.PI / 2} onClick={pick('a-le')}>
-        <Character outfit={A_LE_OUTFIT} />
+        <Avatar variant="mini_male_e" motion={IDLE} fallback={<Character outfit={A_LE_OUTFIT} />} />
       </group>
       <HallLights />
     </group>

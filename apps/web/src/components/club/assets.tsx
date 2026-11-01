@@ -69,7 +69,8 @@ function Model({ url }: { url: string }) {
   return <primitive object={copy} />;
 }
 
-class Fallback extends Component<
+/** 子樹載入失敗（例如 GLB 404）時改顯示 fallback，不讓整個畫布掛掉 */
+export class Fallback extends Component<
   { fallback: ReactNode; children: ReactNode },
   { failed: boolean }
 > {
