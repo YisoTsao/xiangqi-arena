@@ -57,10 +57,7 @@ test('走樓梯上 2F 牌桌館入座下棋，離桌後回到 2F', async ({ page
     timeout: 60_000,
   });
 
-  // 樓梯口有下樓提示時「帶我去空桌」不顯示：先往右走開一步再找桌子
-  await page.keyboard.down('KeyD');
-  await page.waitForTimeout(800);
-  await page.keyboard.up('KeyD');
+  // 站在樓梯口（有下樓提示）也能直接「帶我去空桌」，不靠方向鍵（CI 軟體渲染的幀率不穩）
   await page.getByTestId('club-find-table').click({ timeout: 60_000 });
   await expect(page.getByTestId('club-prompt')).toContainText('棋桌', { timeout: 90_000 });
 
