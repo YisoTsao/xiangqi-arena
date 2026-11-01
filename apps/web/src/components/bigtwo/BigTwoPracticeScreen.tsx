@@ -5,8 +5,13 @@ import { useRouter } from 'next/navigation';
 import { BigTwoScreen } from './BigTwoScreen';
 import { useBigTwoPractice } from '@/lib/local/bigTwoPractice';
 
+interface Props {
+  /** 離開時呼叫；省略時回首頁 */
+  onExit?: () => void;
+}
+
 /** 和三位電腦玩家練習大老二；進入頁面就開局 */
-export function BigTwoPracticeScreen() {
+export function BigTwoPracticeScreen({ onExit }: Props) {
   const router = useRouter();
   const { snapshot, snapshotAt, start, send, stop } = useBigTwoPractice();
   useEffect(() => {
@@ -29,7 +34,8 @@ export function BigTwoPracticeScreen() {
       variant="practice"
       onExit={() => {
         stop();
-        router.push('/');
+        if (onExit) onExit();
+        else router.push('/');
       }}
     />
   );

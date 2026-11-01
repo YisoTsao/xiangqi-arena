@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { dayPhaseOf, formatGameTime, gameHourAt, lightingAt } from './clock';
 import {
   INTERACTABLES,
+  INTERACTABLES_2F,
+  STAIRS_LANDING_2F,
+  ELEVATOR_LANDING,
+  ALL_INTERACTABLES,
   SPAWN,
   TABLES,
   CAMERA_YAW,
@@ -69,6 +73,58 @@ describe('暮光遊樂館配置', () => {
     const [rx, rz] = inputToWorld(1, 0, CAMERA_YAW.inside);
     expect(rx).toBeGreaterThan(0);
     expect(rz).toBeLessThan(0);
+  });
+});
+
+describe('2F 牌桌館配置', () => {
+  it('樓梯口、電梯口與每個互動點的靠近點都站得下', () => {
+    expect(isFree(...STAIRS_LANDING_2F, undefined, 2)).toBe(true);
+    expect(isFree(...ELEVATOR_LANDING, undefined, 2)).toBe(true);
+    for (const it of INTERACTABLES_2F)
+      expect(isFree(...it.approach, undefined, 2), it.id).toBe(true);
+  });
+
+  it('站在靠近點時，最近的互動點就是它自己', () => {
+    for (const it of INTERACTABLES_2F) expect(nearestInteractable(it.approach, 2)?.id).toBe(it.id);
+  });
+
+  it('從樓梯口可以走到每一個互動點', () => {
+    for (const it of INTERACTABLES_2F) {
+      const path = findPath(STAIRS_LANDING_2F, it.approach, 2);
+      expect(path.length, it.id).toBeGreaterThan(0);
+      expect(path.at(-1)).toEqual(it.approach);
+      let prev = STAIRS_LANDING_2F;
+      for (const p of path) {
+        expect(clearLine(prev, p, 2), `${it.id} ${p}`).toBe(true);
+        prev = p;
+      }
+    }
+  });
+
+  it('2F 沒有正門，走不到街上；一律算室內', () => {
+    let p = STAIRS_LANDING_2F;
+    for (let i = 0; i < 200; i++) p = slide(p, 0, 0.1, 2);
+    expect(p[1]).toBeLessThan(0);
+    expect(isInside([0, 5], 2)).toBe(true);
+  });
+
+  it('1F 樓梯上樓、2F 樓梯下樓，電梯兩層都有', () => {
+    expect(INTERACTABLES.some((it) => it.kind === 'stairs')).toBe(true);
+    expect(INTERACTABLES_2F.some((it) => it.kind === 'stairsDown')).toBe(true);
+    expect(INTERACTABLES.some((it) => it.kind === 'elevator')).toBe(true);
+    expect(INTERACTABLES_2F.some((it) => it.kind === 'elevator')).toBe(true);
+    expect(INTERACTABLES_2F.filter((it) => it.kind === 'chess').map((it) => it.mode)).toEqual([
+      'classic',
+      'classic',
+      'banqi',
+      'banqi',
+    ]);
+    expect(INTERACTABLES_2F.filter((it) => it.kind === 'cards')).toHaveLength(3);
+  });
+
+  it('所有樓層的互動點 id 不重複', () => {
+    const ids = ALL_INTERACTABLES.map((it) => it.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

@@ -257,7 +257,9 @@ Stylized Low-poly，圓潤、可愛、精緻。
 - **後處理**：N8AO（高畫質）、Bloom、色相飽和、亮度對比、ACES 色調映射、暗角、SMAA；低畫質全部關閉。
 - **合併**：`Bake` 把材質相同的靜態 mesh 合併成一個 draw call，原 mesh 隱藏但保留點擊。
 - **鏡頭**：3/4 斜俯視，室內轉 0.55 rad 並切開前牆與右牆（剖面）；輸入依鏡頭方向換算。
-- **截圖**：`/club?hour=20&q=medium&spawn=hall` 直接站在 1F 室內；`?perf=1` 在 `window.__clubPerf` 提供 draw call、三角面與 fps。
+- **樓層**：街口與 1F 是同一個平面；2F 牌桌館（`CardHall.tsx`）整組放在 y = 3.6，和 1F 用同一個樓板範圍、同一個樓梯與電梯位置。碰撞、尋路、互動點都依樓層分開（`layout.ts` 的 `collidersOf`／`interactablesOf`）。走樓梯或搭電梯時畫面淡出、換樓層、淡入，鏡頭在黑幕裡直接跳到新樓層。2F 只渲染 2F，不同時畫 1F；樓板下方用一塊 1F 外殼代替。
+- **2F 配置**：左半四張木棋桌（前排大盤象棋、後排暗棋，兩人同裝置對弈），右半三張撲克圓桌（和三位電腦打大老二），後牆中央服務台（小葵），左後角往 3F 的樓梯拉紅繩（整修中）。燈光是綠燈罩吊燈下的暖光（`#ffe3a6`），桌面用綠絨、棋桌用木紋。
+- **截圖**：`/club?hour=20&q=medium&spawn=hall` 直接站在 1F 室內；`spawn=2f`／`2f-chess`／`2f-cards` 站在 2F；`spawn=stairs`／`elevator` 站在 1F 樓梯口、電梯口。`?perf=1` 在 `window.__clubPerf` 提供 draw call、三角面與 fps。
 - 首頁主視覺 `public/club/keyart-*.jpg` 是這個場景的實際算圖，場景大改後要重新截取。
 
 無頭瀏覽器（SwiftShader）的幀率不能代表實機，§11 的預算仍待實機量測。

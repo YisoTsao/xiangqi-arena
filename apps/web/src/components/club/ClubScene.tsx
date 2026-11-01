@@ -20,14 +20,16 @@ import { gameHourAt, lightingAt } from './clock';
 import { Effects } from './Effects';
 import {
   CAMERA_YAW,
-  INTERACTABLES,
   WALK_SPEED,
+  floorY,
   inputToWorld,
+  interactablesOf,
   isInside,
   nearestInteractable,
   slide,
   type Vec2,
 } from './layout';
+import { CardHall } from './CardHall';
 import { MahjongHall } from './MahjongHall';
 import { NeonContext, QualityContext, useQuality, type Quality } from './props';
 import { Street } from './Street';
@@ -128,8 +130,9 @@ function SceneProbe({
   neon: number;
   inside: boolean;
 }) {
-  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}${inside}`;
-  if (inside) return <HallProbe key={key} neon={neon} />;
+  const floor = useClub((s) => s.floor);
+  const key = `${sky.getHexString()}${horizon.getHexString()}${neon}${inside}${floor}`;
+  if (inside) return <HallProbe key={key} neon={neon} lamp={floor === 2 ? '#d8f0b0' : '#ffc878'} />;
   return (
     // 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到
     <Environment
@@ -195,7 +198,7 @@ function SceneProbe({
  * 1F 室內的環境貼圖：深木色的牆與地板、暖色天花、六盞桌燈的亮塊，和紙窗透進來的光
  * （白天暖白、夜晚冷藍）。漆面木頭、茶具、麻將牌映出的是室內的燈，而不是街上的天空。
  */
-function HallProbe({ neon }: { neon: number }) {
+function HallProbe({ neon, lamp }: { neon: number; lamp: string }) {
   const night = neon > 0.5;
   return (
     <Environment resolution={64} frames={1} environmentIntensity={0.55}>
@@ -215,7 +218,7 @@ function HallProbe({ neon }: { neon: number }) {
         <Lightformer
           key={x}
           form="circle"
-          color="#ffc878"
+          color={lamp}
           intensity={3}
           position={[x, 4, -2]}
           rotation-x={Math.PI / 2}
@@ -317,8 +320,9 @@ function DayNight({ hour, children }: { hour?: number; children: ReactNode }) {
     const texel = (SHADOW_HALF * 2) / l.shadow.mapSize.x;
     const cx = Math.round(player.pos[0] / texel) * texel;
     const cz = Math.round((player.pos[1] - 2) / texel) * texel;
-    l.target.position.set(cx, 0, cz);
-    l.position.set(cx, 0, cz).addScaledVector(sunDir.current, 30);
+    const y0 = floorY(useClub.getState().floor);
+    l.target.position.set(cx, y0, cz);
+    l.position.set(cx, y0, cz).addScaledVector(sunDir.current, 30);
     l.target.updateMatrixWorld();
   });
 
@@ -377,7 +381,7 @@ function stepPlayer(h: number, [mx, mz]: [number, number]): boolean {
     }
   }
   if (!dx && !dz) return false;
-  const next = slide(player.pos, dx, dz);
+  const next = slide(player.pos, dx, dz, useClub.getState().floor);
   const moved = Math.hypot(next[0] - player.pos[0], next[1] - player.pos[1]);
   // 尋路時被擋住（例如路線貼著牆角）就放棄這條路
   if (moved < step * 0.2 && player.path.length > 0) player.path = [];
@@ -444,12 +448,12 @@ function Player() {
         left -= h;
         if (stepPlayer(h, input)) moving = true;
       }
-      club.setNearby(nearestInteractable(player.pos));
-      club.setInside(isInside(player.pos));
+      club.setNearby(nearestInteractable(player.pos, club.floor));
+      club.setInside(isInside(player.pos, club.floor));
     }
 
     player.moving = moving;
-    g.position.set(player.pos[0], 0, player.pos[1]);
+    g.position.set(player.pos[0], floorY(club.floor), player.pos[1]);
     // 轉身取最短角度
     let diff = player.yaw - g.rotation.y;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -537,10 +541,12 @@ function CameraRig() {
   const intro = useRef<{ t: number; fromPos: Vector3; fromLook: Vector3 } | null>(null);
   const tmpPos = useRef(new Vector3());
   const tmpLook = useRef(new Vector3());
+  const lastFloor = useRef(1);
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
-    const { mode, inside } = useClub.getState();
+    const { mode, inside, floor } = useClub.getState();
+    const y0 = floorY(floor);
     const target = inside ? CAMERA_YAW.inside : CAMERA_YAW.outside;
     view.yaw += (target - view.yaw) * (mode === 'walk' ? 1 - Math.exp(-dt * 3) : 1);
     const f = inside ? FOLLOW.inside : FOLLOW.outside;
@@ -550,10 +556,10 @@ function CameraRig() {
     const cy = Math.cos(view.yaw);
     const followPos = tmpPos.current.set(
       px + sy * f.dist * far,
-      f.height * far,
+      y0 + f.height * far,
       pz + cy * f.dist * far,
     );
-    const followLook = tmpLook.current.set(px - sy * f.lookAhead, 0.9, pz - cy * f.lookAhead);
+    const followLook = tmpLook.current.set(px - sy * f.lookAhead, y0 + 0.9, pz - cy * f.lookAhead);
     const shot = titleShot(size.width / Math.max(1, size.height));
 
     if (mode === 'title') {
@@ -577,12 +583,18 @@ function CameraRig() {
         intro.current = null;
         useClub.getState().setMode('walk');
       }
+    } else if (floor !== lastFloor.current) {
+      // 換樓層發生在黑幕裡：鏡頭直接跳到新樓層，淡入時不會看到鏡頭穿過樓板
+      camera.position.copy(followPos);
+      look.current.copy(followLook);
+      titleMix.current = 0;
     } else {
       const k = 1 - Math.exp(-dt * 5);
       camera.position.lerp(followPos, k);
       look.current.lerp(followLook, k);
       titleMix.current = 0;
     }
+    lastFloor.current = floor;
     camera.lookAt(look.current);
     applyFraming(camera as PerspectiveCamera, size, shot, titleMix.current);
   });
@@ -591,10 +603,11 @@ function CameraRig() {
 
 /** 看不見的地面：點一下就走過去。範圍很大，點到樓上的牆時也會落在樓後方，角色就走進門裡 */
 function ClickGround() {
+  const floor = useClub((s) => s.floor);
   return (
     <mesh
       rotation-x={-Math.PI / 2}
-      position-y={0.02}
+      position-y={floorY(floor) + 0.02}
       onClick={(e) => {
         e.stopPropagation();
         walkTo([e.point.x, e.point.z]);
@@ -608,15 +621,17 @@ function ClickGround() {
 
 function World({ hour }: { hour?: number }) {
   const inside = useClub((s) => s.inside);
+  const floor = useClub((s) => s.floor);
   const dbg = typeof window !== 'undefined' ? window.location.search : '';
   const select = (id: string) => {
-    const it = INTERACTABLES.find((x) => x.id === id);
+    const it = interactablesOf(useClub.getState().floor).find((x) => x.id === id);
     if (it) walkTo(it.approach);
   };
   return (
     <DayNight hour={hour}>
-      {!dbg.includes('nostreet') && <Street inside={inside} />}
-      {!dbg.includes('nohall') && <MahjongHall onSelect={select} inside={inside} />}
+      {!dbg.includes('nostreet') && <Street inside={inside || floor === 2} />}
+      {!dbg.includes('nohall') && floor === 1 && <MahjongHall onSelect={select} inside={inside} />}
+      {!dbg.includes('nohall') && floor === 2 && <CardHall onSelect={select} />}
       <ClickGround />
       <Player />
       <CameraRig />

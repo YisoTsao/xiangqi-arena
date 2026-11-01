@@ -1,15 +1,23 @@
 'use client';
 
 import { create } from 'zustand';
-import { INTERACTABLES, SPAWN, findPath, type Interactable, type Vec2 } from './layout';
+import {
+  SPAWN,
+  findPath,
+  interactablesOf,
+  type Floor,
+  type Interactable,
+  type Vec2,
+} from './layout';
 
 /**
  * title：開場的街口全景 + 選單
  * intro：按下「進入遊戲」後鏡頭推向門口
  * walk：自由走動
- * seated：坐在麻將桌，牌局畫面蓋在場景上
+ * seated：坐在牌桌或棋桌，對局畫面蓋在場景上
+ * travel：走樓梯或搭電梯換樓層（畫面淡出再淡入，期間不能操作）
  */
-export type ClubMode = 'title' | 'intro' | 'walk' | 'seated';
+export type ClubMode = 'title' | 'intro' | 'walk' | 'seated' | 'travel';
 
 /** 街口天氣：下雨時地面濕亮、會倒映招牌與路燈 */
 export type Weather = 'rain' | 'clear';
@@ -31,6 +39,8 @@ export const transition = { inside: 0 };
 
 interface ClubState {
   mode: ClubMode;
+  /** 角色所在樓層（1 = 街口與 1F、2 = 2F 牌桌館） */
+  floor: Floor;
   /** 角色在 1F 室內（外觀與樓上會藏起來） */
   inside: boolean;
   nearby: Interactable | null;
@@ -43,14 +53,22 @@ interface ClubState {
   setMode: (mode: ClubMode) => void;
   setInside: (inside: boolean) => void;
   setNearby: (it: Interactable | null) => void;
+  /** 換樓層：淡出 → 換到 to 樓的 arrive 位置 → 淡入 */
+  travel: (to: Floor, arrive: Vec2, yaw?: number) => void;
   sit: (tableId: string) => void;
   stand: (to: Vec2) => void;
   say: (who: string, text: string) => void;
   reset: () => void;
 }
 
-export const useClub = create<ClubState>((set) => ({
+/** 換樓層淡出、淡入各用的時間（毫秒）；畫面上的黑幕依 mode === 'travel' 做 CSS 過渡 */
+export const TRAVEL_FADE_MS = 380;
+
+let travelTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const useClub = create<ClubState>((set, get) => ({
   mode: 'title',
+  floor: 1,
   inside: false,
   nearby: null,
   seatedAt: null,
@@ -60,6 +78,22 @@ export const useClub = create<ClubState>((set) => ({
   setMode: (mode) => set({ mode }),
   setInside: (inside) => set((s) => (s.inside === inside ? s : { inside })),
   setNearby: (nearby) => set((s) => (s.nearby?.id === nearby?.id ? s : { nearby })),
+  travel: (to, arrive, yaw = Math.PI / 2) => {
+    if (get().mode !== 'walk') return;
+    player.path = [];
+    set({ mode: 'travel', nearby: null, bubble: null });
+    if (travelTimer) clearTimeout(travelTimer);
+    travelTimer = setTimeout(() => {
+      player.pos = [arrive[0], arrive[1]];
+      player.yaw = yaw;
+      // 換到 2F 一律算室內；回到 1F 時樓梯與電梯都在室內
+      set({ floor: to, inside: true });
+      travelTimer = setTimeout(() => {
+        travelTimer = null;
+        if (get().mode === 'travel') set({ mode: 'walk' });
+      }, TRAVEL_FADE_MS);
+    }, TRAVEL_FADE_MS);
+  },
   sit: (tableId) => {
     player.path = [];
     set({ mode: 'seated', seatedAt: tableId, bubble: null });
@@ -72,25 +106,37 @@ export const useClub = create<ClubState>((set) => ({
   },
   say: (who, text) => set({ bubble: { who, text } }),
   reset: () => {
+    if (travelTimer) clearTimeout(travelTimer);
+    travelTimer = null;
     player.pos = [...SPAWN];
     player.yaw = Math.PI;
     player.path = [];
-    set({ mode: 'title', inside: false, nearby: null, seatedAt: null, bubble: null });
+    set({
+      mode: 'title',
+      floor: 1,
+      inside: false,
+      nearby: null,
+      seatedAt: null,
+      bubble: null,
+    });
   },
 }));
 
 /** 點地面或點物件：沿著尋路結果走過去 */
 export function walkTo(target: Vec2): void {
-  if (useClub.getState().mode !== 'walk') return;
-  player.path = findPath(player.pos, target);
+  const { mode, floor } = useClub.getState();
+  if (mode !== 'walk') return;
+  player.path = findPath(player.pos, target, floor);
 }
 
-/** 「帶我去空桌」：走到離角色最近的麻將桌旁 */
+const SEAT_KINDS = new Set(['table', 'chess', 'cards']);
+
+/** 「帶我去空桌」：走到離角色最近、這層樓的牌桌或棋桌旁 */
 export function walkToNearestTable(): void {
   let best: Interactable | null = null;
   let bestD = Infinity;
-  for (const it of INTERACTABLES) {
-    if (it.kind !== 'table') continue;
+  for (const it of interactablesOf(useClub.getState().floor)) {
+    if (!SEAT_KINDS.has(it.kind)) continue;
     const d = Math.hypot(it.approach[0] - player.pos[0], it.approach[1] - player.pos[1]);
     if (d < bestD) {
       best = it;

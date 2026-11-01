@@ -83,8 +83,8 @@ function Floor() {
   );
 }
 
-/** 一面牆：下半磁磚、上半壁紙、木腰線與天花線腳 */
-function WallPanel({
+/** 一面牆：下半磁磚、上半壁紙、木腰線與天花線腳（2F 牌桌館共用） */
+export function WallPanel({
   length,
   position,
   ry,
@@ -129,7 +129,7 @@ function WallPanel({
 }
 
 /** 窗：木框 + 和紙格，光從外面透進來（白天暖白、夜晚冷藍月光） */
-function ShojiWindow({
+export function ShojiWindow({
   position,
   ry,
   size = [1.6, 1.3],
@@ -417,8 +417,16 @@ function TileWalls() {
   );
 }
 
-/** 木椅：靠背 + 紅色坐墊，面向桌子 */
-function Chair({ at, face }: { at: Vec2; face: number }) {
+/** 木椅：靠背 + 坐墊（1F 紅、2F 綠），面向桌子 */
+export function Chair({
+  at,
+  face,
+  cushion = '#b8433a',
+}: {
+  at: Vec2;
+  face: number;
+  cushion?: string;
+}) {
   const s = CHAIR_SIZE;
   return (
     <group position={[at[0], 0, at[1]]} rotation-y={face}>
@@ -426,7 +434,7 @@ function Chair({ at, face }: { at: Vec2; face: number }) {
       <Rounded
         size={[s - 0.06, 0.05, s - 0.06]}
         position={[0, 0.47, 0]}
-        color="#b8433a"
+        color={cushion}
         radius={0.02}
         roughness={0.9}
       />
@@ -706,7 +714,14 @@ function Counter({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void }
   );
 }
 
-function Stairs({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void }) {
+export function Stairs({
+  onSelect,
+  sign,
+}: {
+  onSelect: (e: ThreeEvent<MouseEvent>) => void;
+  /** 樓梯上方的指示牌 */
+  sign: string;
+}) {
   const s = STAIRS;
   const steps = 11;
   const depth = (s.maxZ - s.minZ) / steps;
@@ -746,7 +761,7 @@ function Stairs({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void })
         rotation={[Math.atan2(2, s.maxZ - s.minZ), 0, 0]}
       />
       <Sign
-        text="2F 牌桌館・整修中"
+        text={sign}
         size={[1.9, 0.4]}
         position={[cx + 0.8, 2.95, HALL.minZ + 0.02]}
         bg={CLUB.cream}
@@ -758,7 +773,7 @@ function Stairs({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void })
   );
 }
 
-function Elevator({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void }) {
+export function Elevator({ onSelect }: { onSelect: (e: ThreeEvent<MouseEvent>) => void }) {
   const e = ELEVATOR;
   const [cx, cz] = mid(e);
   const [w, d] = span(e);
@@ -1009,7 +1024,7 @@ export function MahjongHall({
           <MahjongTable key={i} at={t} number={i + 1} onSelect={pick(`table-${i + 1}`)} />
         ))}
         <Counter onSelect={pick('a-le')} />
-        <Stairs onSelect={pick('stairs')} />
+        <Stairs onSelect={pick('stairs')} sign="↑ 2F 牌桌館" />
         <Elevator onSelect={pick('elevator')} />
         <Decor />
       </Bake>
