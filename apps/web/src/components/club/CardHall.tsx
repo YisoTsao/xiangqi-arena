@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Color, Object3D, type InstancedMesh } from 'three';
 import { Bake } from './Bake';
+import { Avatar, IDLE } from './Avatar';
 import { Character, HOST_OUTFIT, WATCHER_OUTFIT } from './Character';
 import {
   CARD_TABLE_RADIUS,
@@ -760,11 +761,19 @@ export function CardHall({ onSelect }: { onSelect: (id: string) => void }) {
       </Bake>
       <ChessPieces />
       <group position={[HOST[0], 0, HOST[1]]} onClick={pick('host')}>
-        <Character outfit={HOST_OUTFIT} />
+        <Avatar
+          variant="mini_female_d"
+          motion={IDLE}
+          fallback={<Character outfit={HOST_OUTFIT} />}
+        />
       </group>
       {/* 觀棋的老伯：面向 2 號棋桌 */}
       <group position={[WATCHER[0], 0, WATCHER[1]]} rotation-y={-Math.PI * 0.62}>
-        <Character outfit={WATCHER_OUTFIT} />
+        <Avatar
+          variant="mini_male_b"
+          motion={IDLE}
+          fallback={<Character outfit={WATCHER_OUTFIT} />}
+        />
       </group>
       <Lights />
     </group>

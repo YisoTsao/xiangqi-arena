@@ -17,7 +17,9 @@ import {
   nearestInteractable,
   slide,
   standPointOf,
+  BOUNDS,
 } from './layout';
+import { DISTRICT, SIDE_STREET_X, colliderOf } from './district';
 
 describe('暮光遊樂館配置', () => {
   it('開場位置、每張桌子的站位與每個互動點的靠近點都站得下', () => {
@@ -149,5 +151,57 @@ describe('日夜時鐘', () => {
     expect(lightingAt(22).neon).toBe(1);
     expect(lightingAt(23.99).sky).toEqual(lightingAt(0).sky);
     expect(lightingAt(18).neon).toBeGreaterThan(0);
+  });
+});
+
+describe('樂町街區', () => {
+  it('街上不算室內；館內才算', () => {
+    expect(isInside([0, -6])).toBe(true);
+    expect(isInside([0, 2])).toBe(false);
+    expect(isInside([0, -16])).toBe(false);
+    expect(isInside([50, -20])).toBe(false);
+  });
+
+  it('從騎樓可以走到後巷、對面廣場、兩條側街與擴建預定地', () => {
+    const goals: [number, number][] = [
+      [0, -16], // 後巷（俱樂部正後方）
+      [0, 19], // 廣場
+      [SIDE_STREET_X, -30],
+      [-SIDE_STREET_X, 30],
+      [0, -28], // 擴建預定地 A
+      [51, 25], // 擴建預定地 B
+    ];
+    for (const g of goals) {
+      expect(isFree(...g), `${g}`).toBe(true);
+      const path = findPath(SPAWN, g);
+      expect(path.at(-1), `${g}`).toEqual(g);
+      let prev = SPAWN;
+      for (const p of path) {
+        expect(clearLine(prev, p), `${g} ${p}`).toBe(true);
+        prev = p;
+      }
+    }
+  });
+
+  it('街區的大樓擋路、建築不重疊在路面上', () => {
+    for (const p of DISTRICT) {
+      const c = colliderOf(p);
+      if (!c) continue;
+      const cx = (c.minX + c.maxX) / 2;
+      const cz = (c.minZ + c.maxZ) / 2;
+      if (cx < BOUNDS.minX || cx > BOUNDS.maxX || cz < BOUNDS.minZ || cz > BOUNDS.maxZ) continue;
+      // 不壓到主街路面（z ∈ [3.5, 10.8]）以外的車道：只有車可以停在路上
+      if (!['sedan', 'taxi', 'van', 'suv'].includes(p.model)) {
+        expect(c.maxZ <= 3.5 || c.minZ >= 10.8, `${p.model} ${p.x},${p.z}`).toBe(true);
+      }
+      expect(isFree(cx, cz), `${p.model} ${p.x},${p.z}`).toBe(false);
+    }
+  });
+
+  it('長距離尋路夠快', () => {
+    const t0 = performance.now();
+    findPath([-68, -40], [68, 42]);
+    findPath([68, -40], [-68, 42]);
+    expect(performance.now() - t0).toBeLessThan(1500);
   });
 });

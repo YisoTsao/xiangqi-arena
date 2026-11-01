@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { randomAvatarColor } from './avatarColors';
 import {
   SPAWN,
   findPath,
@@ -29,7 +30,25 @@ export const player = {
   yaw: Math.PI,
   path: [] as Vec2[],
   moving: false,
+  /** 按住 Shift 或點很遠的地方時用跑的 */
+  running: false,
+  /** 角色衣服的顏色（每開一個視窗隨機一個；多人連線時同步給別人） */
+  color: sessionColor(),
 };
+
+/** 同一個分頁重新整理後保持同一個顏色；新開視窗就是新的角色 */
+function sessionColor(): string {
+  if (typeof window === 'undefined') return '#5cc2c9';
+  try {
+    const saved = window.sessionStorage.getItem('club-avatar-color');
+    if (saved && /^#[0-9a-f]{6}$/i.test(saved)) return saved;
+    const c = randomAvatarColor();
+    window.sessionStorage.setItem('club-avatar-color', c);
+    return c;
+  } catch {
+    return randomAvatarColor();
+  }
+}
 
 /**
  * 室內外過渡：0 = 街上、1 = 室內，進出門時約 0.6 秒內平滑變化（DayNight 每格更新）。
@@ -121,6 +140,12 @@ export const useClub = create<ClubState>((set, get) => ({
     });
   },
 }));
+
+/**
+ * 拖曳畫面轉視角時，放開滑鼠那一下不算「點地面走過去」。
+ * 拖曳超過幾個像素就設成 true，下一次按下時清掉。
+ */
+export const pointerGuard = { dragged: false };
 
 /** 點地面或點物件：沿著尋路結果走過去 */
 export function walkTo(target: Vec2): void {
