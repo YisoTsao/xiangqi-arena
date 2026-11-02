@@ -1,0 +1,70 @@
+# 定期對 Supabase 發一個真的會查資料庫的請求，避免免費方案因 7 天沒有活動而被暫停。
+# 需要的 Repository secrets（Settings → Secrets and variables → Actions）見 docs/DEPLOYMENT.md §3.4。
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # 每天 UTC 03:17（台灣 11:17）。避開整點，GitHub 排程在整點最容易延遲
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # xiangqi-arena：game_room.matches 開放 anon 讀取（實際列由 RLS 決定，0 列也算一次查詢）
+          - name: xiangqi-arena
+            url_secret: SUPABASE_URL
+            key_secret: SUPABASE_PUBLISHABLE_KEY
+            path: /rest/v1/matches?select=id&limit=1
+            schema: game_room
+            required: true
+          # 選填：同帳號另一個 Supabase 專案（mistwood），沒設 secret 就跳過
+          - name: mistwood
+            url_secret: MISTWOOD_SUPABASE_URL
+            key_secret: MISTWOOD_SUPABASE_PUBLISHABLE_KEY
+            path: /rest/v1/game_config?select=*&limit=1
+            schema: public
+            required: false
+    name: ping ${{ matrix.name }}
+    steps:
+      - name: Query Supabase
+        env:
+          BASE_URL: ${{ secrets[matrix.url_secret] }}
+          API_KEY: ${{ secrets[matrix.key_secret] }}
+          REQ_PATH: ${{ matrix.path }}
+          SCHEMA: ${{ matrix.schema }}
+          REQUIRED: ${{ matrix.required }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$API_KEY" ]; then
+            if [ "$REQUIRED" = "true" ]; then
+              echo "::error::缺少 ${{ matrix.url_secret }} 或 ${{ matrix.key_secret }} secret"
+              exit 1
+            fi
+            echo "::notice::未設定 ${{ matrix.name }} 的 secret，略過"
+            exit 0
+          fi
+
+          url="${BASE_URL%/}${REQ_PATH}"
+          for attempt in 1 2 3; do
+            status=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 30 \
+              -H "apikey: $API_KEY" \
+              -H "Accept-Profile: $SCHEMA" \
+              "$url" || echo 000)
+            echo "attempt $attempt: HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "Supabase ${{ matrix.name }} is awake."
+              exit 0
+            fi
+            head -c 500 /tmp/body 2>/dev/null; echo
+            sleep $((attempt * 10))
+          done
+          echo "::error::Supabase ${{ matrix.name }} 回傳 HTTP $status，專案可能已被暫停或 key 不正確"
+          exit 1
