@@ -239,7 +239,7 @@ const REFLECTION_SCALE = { low: 0.25, medium: 0.35, high: 0.5 } as const;
 const REFLECTION_EVERY = { low: 2, medium: 1, high: 1 } as const;
 
 /** 濕街面：雨天時倒映招牌、路燈與角色 */
-export function WetStreet({ inside }: { inside: boolean }) {
+export function WetStreet() {
   const quality = useQuality();
   const scale = REFLECTION_SCALE[quality];
   const every = REFLECTION_EVERY[quality];
@@ -282,6 +282,9 @@ export function WetStreet({ inside }: { inside: boolean }) {
   useFrame((state) => {
     const m = mesh.current;
     const { gl, scene, camera, size } = state;
+    const club = useClub.getState();
+    // 室內看不到街面，不用畫倒影
+    const inside = club.inside || club.floor === 2;
     const on = scale > 0 && !inside && shared.uWet.value > 0.01;
     extra.uReflOn.value = on ? 1 : 0;
     if (!m || !on) return;
@@ -666,12 +669,12 @@ export function WeatherDriver() {
 }
 
 /** 下雨時整個街口的東西：濕街面、雨絲、水花 */
-export function RainyStreet({ inside }: { inside: boolean }) {
+export function RainyStreet() {
   const quality = useQuality();
   return (
     <>
       <WeatherDriver />
-      <WetStreet inside={inside} />
+      <WetStreet />
       <RainFall />
       {quality !== 'low' && <Splashes />}
     </>

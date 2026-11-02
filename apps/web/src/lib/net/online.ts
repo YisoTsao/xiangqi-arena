@@ -16,6 +16,7 @@ import {
 import type { ConnectionStatus, IntentInput } from '../controller';
 import { toBigTwoSnapshot } from '../bigTwo';
 import { errorMessage } from '../games';
+import { toMahjongSnapshot } from '../mahjong';
 import { toXiangqiSnapshot } from '../xiangqi';
 import { getPlayerName, getPlayerToken } from '../identity';
 import { toast } from '../toast';
@@ -49,6 +50,12 @@ let session = 0;
 
 const getClient = () => (client ??= new Client(gameServerUrl()));
 
+/** 俱樂部的桌子用「一個分頁一個角色」的身分，而不是整個瀏覽器共用的那一個 */
+let identityOverride: { token: string; name: string } | null = null;
+export function setOnlineIdentity(identity: { token: string; name: string } | null): void {
+  identityOverride = identity;
+}
+
 const NOTICE_TEXT: Partial<Record<Notice['kind'], (who: string) => string>> = {
   drawOffered: (who) => `${who}提議和棋`,
   drawDeclined: (who) => `${who}拒絕了和棋`,
@@ -72,6 +79,8 @@ function validForGame(snapshot: RoomSnapshot): boolean {
       return toXiangqiSnapshot(snapshot) !== null;
     case 'big-two':
       return toBigTwoSnapshot(snapshot) !== null;
+    case 'mahjong':
+      return toMahjongSnapshot(snapshot) !== null;
     default:
       return false;
   }
@@ -180,8 +189,8 @@ export const useOnline = create<OnlineState>((set, get) => {
 
   const joinOptions = () => ({
     protocol: PROTOCOL_VERSION,
-    playerToken: getPlayerToken(),
-    name: getPlayerName(),
+    playerToken: identityOverride?.token ?? getPlayerToken(),
+    name: identityOverride?.name ?? getPlayerName(),
   });
 
   if (typeof window !== 'undefined') {

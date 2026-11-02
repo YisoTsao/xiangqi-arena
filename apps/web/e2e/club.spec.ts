@@ -19,16 +19,39 @@ test('走進 1F 麻將館入座打牌，離桌後回到桌邊', async ({ page })
   await page.getByTestId('club-find-table').click();
   await expect(page.getByTestId('club-prompt')).toContainText('入座', { timeout: 90_000 });
 
+  // 空桌：坐下就是開桌，四人到齊才開打，先顯示等人的畫面
+  await expect(page.getByTestId('club-prompt-seats')).toHaveText('空桌，坐下就開桌');
   await page.keyboard.press('KeyE');
   await expect(root).toHaveAttribute('data-mode', 'seated');
-  await expect(page.getByTestId('mj-hand')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('club-table-waiting')).toBeVisible();
+  await expect(page.getByTestId('club-table-count')).toHaveText('1/4 人', { timeout: 20_000 });
+  await expect(page.getByTestId('club-table-note')).toContainText('你開了這一桌');
+  await expect(page.getByTestId('mj-hand')).toHaveCount(0);
 
-  await page.getByTestId('mj-exit').click();
+  await page.getByTestId('club-table-leave').click();
   await expect(root).toHaveAttribute('data-mode', 'walk');
   // 回到桌邊，入座提示還在
   await expect(page.getByTestId('club-prompt')).toContainText('入座');
   await page.getByTestId('club-act').click();
-  await expect(page.getByTestId('mj-hand')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('club-table-waiting')).toBeVisible();
+});
+
+test('重新整理後留在原地', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/club?hour=20&q=low&spawn=2f');
+  const root = page.getByTestId('club-root');
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 60_000 });
+  await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館');
+  // 位置每秒存一次
+  await page.waitForTimeout(1500);
+  await page.goto('/club?hour=20&q=low');
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 60_000 });
+  await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館');
+  // 按「離開」就不再記得位置，下次從街口開始
+  await page.getByTestId('club-exit').click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto('/club?hour=20&q=low');
+  await expect(root).toHaveAttribute('data-mode', 'title');
 });
 
 test('首頁可以走進麻將館', async ({ page }) => {
@@ -64,8 +87,8 @@ test('走樓梯上 2F 牌桌館入座下棋，離桌後回到 2F', async ({ page
   await page.getByTestId('club-act').click();
   await expect(root).toHaveAttribute('data-mode', 'seated');
   await expect(page.getByTestId('club-table')).toHaveAttribute('data-game', 'chess');
-  await expect(page.getByTestId('local-start')).toBeVisible({ timeout: 10_000 });
-  await page.getByRole('button', { name: '返回' }).click();
+  await expect(page.getByTestId('club-table-count')).toHaveText('1/2 人', { timeout: 20_000 });
+  await page.getByTestId('club-table-leave').click();
   await expect(root).toHaveAttribute('data-mode', 'walk');
   await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館');
 });

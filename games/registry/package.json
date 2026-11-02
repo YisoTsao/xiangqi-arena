@@ -15,6 +15,7 @@
   "dependencies": {
     "@xiangqi-arena/game-core": "workspace:*",
     "@xiangqi-arena/games-big-two": "workspace:*",
+    "@xiangqi-arena/games-mahjong": "workspace:*",
     "@xiangqi-arena/games-xiangqi": "workspace:*"
   },
   "devDependencies": {

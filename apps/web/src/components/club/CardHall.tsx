@@ -5,7 +5,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { Color, Object3D, type InstancedMesh } from 'three';
 import { Bake } from './Bake';
 import { Avatar, IDLE } from './Avatar';
-import { Character, HOST_OUTFIT, WATCHER_OUTFIT } from './Character';
+import { Character, HOST_OUTFIT } from './Character';
 import {
   CARD_TABLE_RADIUS,
   CARD_TABLES,
@@ -21,7 +21,6 @@ import {
   STAIRS,
   STAIRS_LANDING_2F,
   TABLE_HEIGHT,
-  WATCHER,
   cardChairsOf,
   chessChairsOf,
   type Box,
@@ -123,12 +122,7 @@ function Walls() {
   return (
     <group>
       <WallPanel length={W + 0.6} position={[0, 0, HALL.minZ - 0.15]} ry={0} />
-      <WallPanel
-        length={D}
-        position={[HALL.minX - 0.15, 0, -D / 2]}
-        ry={Math.PI / 2}
-        side
-      />
+      <WallPanel length={D} position={[HALL.minX - 0.15, 0, -D / 2]} ry={Math.PI / 2} side />
       <WallPanel
         length={D}
         position={[HALL.maxX + 0.15, 0, -D / 2]}
@@ -771,14 +765,6 @@ export function CardHall({ onSelect }: { onSelect: (id: string) => void }) {
           variant="mini_female_d"
           motion={IDLE}
           fallback={<Character outfit={HOST_OUTFIT} />}
-        />
-      </group>
-      {/* 觀棋的老伯：面向 2 號棋桌 */}
-      <group position={[WATCHER[0], 0, WATCHER[1]]} rotation-y={-Math.PI * 0.62}>
-        <Avatar
-          variant="mini_male_b"
-          motion={IDLE}
-          fallback={<Character outfit={WATCHER_OUTFIT} />}
         />
       </group>
       <Lights />

@@ -12,6 +12,7 @@ import {
   type ClubDenied,
   type ClubPlayer,
   type ClubState,
+  type ClubTableRoom,
   type ClubWelcome,
 } from '@xiangqi-arena/game-protocol';
 import { gameServerUrl } from '@/lib/net/serverUrl';
@@ -55,6 +56,8 @@ interface ClubNetState {
   you: string | null;
   /** 所有人（含自己），位置欄位只是加入時的快照，即時位置看 remotes */
   players: Record<string, ClubPlayer>;
+  /** 有人坐著的桌子 → 對局房間代碼 */
+  tableRooms: Record<string, string>;
   messages: ClubChatMessage[];
   /** 頭上的對白泡泡：id → 最近一句公開聊天 */
   bubbles: Record<string, { text: string; at: number }>;
@@ -72,6 +75,7 @@ export const useClubNet = create<ClubNetState>((set, get) => ({
   status: 'idle',
   you: null,
   players: {},
+  tableRooms: {},
   messages: [],
   bubbles: {},
   chatOpen: false,
@@ -105,6 +109,25 @@ export function isTableFull(tableId: string): boolean {
   const { players, you } = useClubNet.getState();
   const others = seatedAt(players, tableId).filter((p) => p.id !== you);
   return others.length >= clubTableCapacity(tableId);
+}
+
+const TOKEN_KEY = 'xa:clubToken';
+
+/**
+ * 在俱樂部桌上對局用的身分：一個分頁一個（和角色一樣），重新整理後不變，
+ * 所以同一台電腦開兩個視窗坐同一桌也是兩個不同的玩家，斷線重整也拿得回座位。
+ */
+export function clubIdentity(): { token: string; name: string } {
+  let token = readSession(TOKEN_KEY);
+  if (!token || !/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+    token = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'.charAt(b % 64),
+    ).join('');
+    writeSession(TOKEN_KEY, token);
+  }
+  const { players, you } = useClubNet.getState();
+  const name = (you && players[you]?.name) || readSession(NAME_KEY) || '訪客';
+  return { token, name: name.replace(/[<>\u0000-\u001f]/g, '').slice(0, 16) || '訪客' };
 }
 
 function readSession(key: string): string | null {
@@ -186,6 +209,7 @@ function bind(r: Room): void {
       status: 'online',
       you: w.you,
       players,
+      tableRooms: { ...(w.tables ?? {}) },
       // 重連時保留已收到的私聊，公開紀錄以伺服器為準
       messages: mergeMessages(w.history, s.messages),
     }));
@@ -196,6 +220,12 @@ function bind(r: Room): void {
   });
   r.onMessage(CLUB_MSG.updated, (p: ClubPlayer) => {
     useClubNet.setState((s) => ({ players: { ...s.players, [p.id]: p } }));
+  });
+  r.onMessage(CLUB_MSG.table, ({ tableId, code }: ClubTableRoom) => {
+    useClubNet.setState((s) => {
+      const { [tableId]: _old, ...rest } = s.tableRooms;
+      return { tableRooms: code ? { ...rest, [tableId]: code } : rest };
+    });
   });
   r.onMessage(CLUB_MSG.left, ({ id }: { id: string }) => {
     remotes.delete(id);
@@ -240,7 +270,12 @@ function bind(r: Room): void {
     if (room !== r) return;
     room = null;
     remotes.clear();
-    useClubNet.setState({ status: users > 0 ? 'reconnecting' : 'idle', players: {}, you: null });
+    useClubNet.setState({
+      status: users > 0 ? 'reconnecting' : 'idle',
+      players: {},
+      tableRooms: {},
+      you: null,
+    });
     if (users > 0) scheduleRetry();
   });
 }
@@ -359,7 +394,7 @@ export function joinClubLobby(): () => void {
     const r = room;
     room = null;
     remotes.clear();
-    useClubNet.setState({ status: 'idle', players: {}, you: null, bubbles: {} });
+    useClubNet.setState({ status: 'idle', players: {}, tableRooms: {}, you: null, bubbles: {} });
     if (r) void r.leave(true).catch(() => undefined);
   };
 }

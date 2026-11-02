@@ -21,6 +21,8 @@ export const CLUB_MSG = {
   updated: 'club:updated',
   chatMessage: 'club:chatMessage',
   denied: 'club:denied',
+  /** 某張桌子的對局房間代碼變了（開桌或散桌） */
+  table: 'club:table',
 } as const;
 
 export const CLUB_NAME_MAX = 16;
@@ -32,6 +34,19 @@ export const ClubTableIdSchema = z.string().regex(/^(table|chess|cards)-[1-9][0-
 
 export function clubTableCapacity(tableId: string): number {
   return tableId.startsWith('chess-') ? 2 : 4;
+}
+
+/**
+ * 每張桌子玩什麼（要和前端 club/layout.ts 的桌子一致）：
+ * 1F 麻將桌打東風圈；2F 1、2 號棋桌大盤象棋，3、4 號暗棋；撲克圓桌大老二。
+ */
+export function clubTableGame(tableId: string): { gameId: string; mode: string } {
+  if (tableId.startsWith('chess-')) {
+    const n = Number(tableId.slice('chess-'.length));
+    return { gameId: 'xiangqi', mode: n >= 3 ? 'banqi' : 'classic' };
+  }
+  if (tableId.startsWith('cards-')) return { gameId: 'big-two', mode: 'standard' };
+  return { gameId: 'mahjong', mode: 'east' };
 }
 
 /** 名字：去掉控制字元與角括號，最多 16 字 */
@@ -114,6 +129,17 @@ export interface ClubWelcome {
   you: string;
   players: ClubPlayer[];
   history: ClubChatMessage[];
+  /**
+   * 有人坐著的桌子 → 對局房間代碼。第一個坐下的人等於開桌：伺服器替這張桌子開一間對局房間，
+   * 之後坐下的人都加入同一間，坐滿、大家都準備好才開打。
+   */
+  tables?: Record<string, string>;
+}
+
+export interface ClubTableRoom {
+  tableId: string;
+  /** null = 桌子沒人了，房間收掉 */
+  code: string | null;
 }
 
 export type ClubDenied = { reason: 'table-full' | 'rate-limited' | 'no-such-player' };
