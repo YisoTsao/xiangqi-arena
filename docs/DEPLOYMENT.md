@@ -91,6 +91,38 @@ NEXT_PUBLIC_GAME_SERVER_URL=wss://your-game-server.example.com
 
 見 [`supabase/README.md`](../supabase/README.md)。
 
+### 3.4 Supabase 保持活躍（避免免費方案被暫停）
+
+Supabase 免費方案若 7 天沒有任何活動會自動暫停。`.github/workflows/supabase-keepalive.yml`
+每天用 publishable（anon）key 對資料庫發一次唯讀查詢，讓專案保持活躍。
+
+在 GitHub repo → Settings → Secrets and variables → Actions 新增：
+
+| Secret                                      | 值                                                                               |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| `SUPABASE_URL`                              | `https://<project-ref>.supabase.co`                                              |
+| `SUPABASE_PUBLISHABLE_KEY`                  | Dashboard → Project Settings → API Keys 的 publishable key（`sb_publishable_…`） |
+| `MISTWOOD_SUPABASE_URL`（選填）             | 另一個專案 mistwood 的 URL                                                       |
+| `MISTWOOD_SUPABASE_PUBLISHABLE_KEY`（選填） | mistwood 的 publishable key                                                      |
+
+> 只能用 publishable / anon key，**不要**把 Service Role Key 放進這個 workflow。
+
+設定好後到 Actions → Supabase keep-alive → Run workflow 手動跑一次確認是綠燈。
+注意：GitHub 會在 repo 60 天沒有任何 commit 時自動停用排程 workflow，屆時到 Actions 頁面重新啟用即可。
+若專案已經被暫停，要先在 Supabase Dashboard 按 Restore，排程無法喚醒已暫停的專案。
+
+### 3.5 Render 遊戲伺服器保持清醒
+
+Render 免費方案的 web service 閒置 15 分鐘就會休眠，下一個玩家連線要等 30–60 秒冷啟動。
+`.github/workflows/render-keepalive.yml` 每 10 分鐘呼叫一次 `/healthz` 讓它保持清醒。
+
+- 預設網址是 `https://xiangqi-arena-game-server.onrender.com`。若 Render 給的網址不同，
+  到 Settings → Secrets and variables → Actions → **Variables** 新增 `RENDER_GAME_SERVER_URL`
+  （只填網域，例如 `https://xxx.onrender.com`，不用加 `/healthz`）。
+- 免費方案每個 workspace 每月共 750 小時；一個服務全天候開著約 744 小時，剛好夠用，
+  但同 workspace 若還有其他免費服務也要常駐就會超過。
+- repo 是 public，Actions 分鐘數不計費。
+
 ## 4. 本機開發
 
 ```bash

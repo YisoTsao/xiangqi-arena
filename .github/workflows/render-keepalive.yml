@@ -1,0 +1,39 @@
+# 定期呼叫 Render 遊戲伺服器的 /healthz，避免免費方案閒置 15 分鐘後休眠。
+# 網址可用 Repository variable RENDER_GAME_SERVER_URL 覆寫，見 docs/DEPLOYMENT.md §3.5。
+name: Render keep-alive
+
+on:
+  schedule:
+    # 每 10 分鐘一次（GitHub 排程在尖峰時段可能延遲幾分鐘）
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /healthz
+        env:
+          BASE_URL: ${{ vars.RENDER_GAME_SERVER_URL || 'https://xiangqi-arena-game-server.onrender.com' }}
+        run: |
+          url="${BASE_URL%/}/healthz"
+          # 冷啟動可能要 30–60 秒，所以 timeout 給長一點並重試
+          for attempt in 1 2 3; do
+            status=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 90 "$url" || echo 000)
+            echo "attempt $attempt: HTTP $status"
+            if [ "$status" = "200" ]; then
+              cat /tmp/body; echo
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          echo "::error::$url 回傳 HTTP $status，請確認 Render 服務網址或服務是否被停用"
+          exit 1
