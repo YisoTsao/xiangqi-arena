@@ -3,6 +3,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Object3D, type AmbientLight, type InstancedMesh, type PointLight } from 'three';
+import { Arcade } from './Arcade';
 import { Bake } from './Bake';
 import { Avatar, IDLE } from './Avatar';
 import { Character, A_LE_OUTFIT } from './Character';
@@ -188,12 +189,7 @@ function Walls({ inside }: { inside: boolean }) {
     <group>
       {/* 後牆、左牆：完整高度 */}
       <WallPanel length={W + 0.6} position={[0, 0, HALL.minZ - 0.15]} ry={0} />
-      <WallPanel
-        length={D}
-        position={[HALL.minX - 0.15, 0, -D / 2]}
-        ry={Math.PI / 2}
-        side
-      />
+      <WallPanel length={D} position={[HALL.minX - 0.15, 0, -D / 2]} ry={Math.PI / 2} side />
       {/* 右牆：進到室內時切低，鏡頭從右前方看進來 */}
       <WallPanel
         length={D}
@@ -860,7 +856,8 @@ function Decor() {
       <Sign
         text="自摸"
         size={[0.7, 0.95]}
-        position={[HALL.minX + 0.02, 2.3, -6.7]}
+        // 下面是磚塊爆破機台，招牌往上挪
+        position={[HALL.minX + 0.02, 2.62, -6.7]}
         rotation={[0, Math.PI / 2, 0]}
         bg={CLUB.neonRed}
         fg={CLUB.cream}
@@ -871,7 +868,8 @@ function Decor() {
       <Sign
         text="清一色"
         size={[0.62, 1.2]}
-        position={[HALL.minX + 0.02, 2.2, -2.9]}
+        // 下面是夾娃娃機，招牌往上挪
+        position={[HALL.minX + 0.02, 2.68, -2.9]}
         rotation={[0, Math.PI / 2, 0]}
         bg={CLUB.cream}
         fg={CLUB.green}
@@ -1050,6 +1048,7 @@ export function MahjongHall({
         <Decor />
       </Bake>
       <TileWalls />
+      <Arcade onSelect={pick} />
       <group position={[A_LE[0], 0, A_LE[1]]} rotation-y={-Math.PI / 2} onClick={pick('a-le')}>
         <Avatar variant="mini_male_e" motion={IDLE} fallback={<Character outfit={A_LE_OUTFIT} />} />
       </group>
