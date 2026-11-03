@@ -14,6 +14,7 @@ import {
   ELEVATOR,
   FOYER_DEPTH,
   HALL,
+  INTERIOR_CUT,
   INDOOR_PLANTS,
   PARTITIONS,
   SHOE_CABINET,
@@ -41,7 +42,7 @@ const TRIM_STAGGER = 0.012;
 const D = -HALL.minZ;
 const W = HALL.maxX - HALL.minX;
 /** 室內時，靠鏡頭的正面牆與右牆切成這個高度（剖面娃娃屋） */
-const CUT = 0.9;
+const CUT = INTERIOR_CUT;
 
 const mid = (b: Box): Vec2 => [(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2];
 const span = (b: Box): [number, number] => [b.maxX - b.minX, b.maxZ - b.minZ];
@@ -182,40 +183,13 @@ export function ShojiWindow({
   );
 }
 
-function Walls({ inside }: { inside: boolean }) {
-  const frontH = inside ? CUT : H;
+/** 一直都在的牆：後牆、左牆與窗 */
+function Walls() {
   return (
     <group>
       {/* 後牆、左牆：完整高度 */}
       <WallPanel length={W + 0.6} position={[0, 0, HALL.minZ - 0.15]} ry={0} />
-      <WallPanel
-        length={D}
-        position={[HALL.minX - 0.15, 0, -D / 2]}
-        ry={Math.PI / 2}
-        side
-      />
-      {/* 右牆：進到室內時切低，鏡頭從右前方看進來 */}
-      <WallPanel
-        length={D}
-        position={[HALL.maxX + 0.15, 0, -D / 2]}
-        ry={-Math.PI / 2}
-        height={inside ? CUT : H}
-        side
-      />
-      {/* 正面牆內側（門的兩邊）：只有在室內時出現，切低 */}
-      {inside &&
-        [
-          [HALL.minX - 0.3, -1],
-          [1, HALL.maxX + 0.3],
-        ].map(([a, b]) => (
-          <WallPanel
-            key={a}
-            length={b! - a!}
-            position={[(a! + b!) / 2, 0, 0]}
-            ry={Math.PI}
-            height={frontH}
-          />
-        ))}
+      <WallPanel length={D} position={[HALL.minX - 0.15, 0, -D / 2]} ry={Math.PI / 2} side />
       {/* 後牆三扇和紙窗、左牆兩扇 */}
       {[-4.6, 0.2, 4.4].map((x) => (
         <ShojiWindow key={x} position={[x, 1.9, HALL.minZ + 0.02]} ry={0} />
@@ -228,6 +202,38 @@ function Walls({ inside }: { inside: boolean }) {
           size={[1.4, 1.2]}
         />
       ))}
+    </group>
+  );
+}
+
+/**
+ * 靠鏡頭的右牆與正面牆內側：在街上時右牆是完整高度；進到室內時右牆切低、正面牆內側出現（剖面娃娃屋）。
+ * 兩種樣子都事先建好、各自合併一次，進出門只切換 visible，
+ * 不重新掛載也不重新合併網格（以前進門那一格要重建整個 1F 的合併網格，會頓一下）。
+ */
+function CutWalls({ inside }: { inside: boolean }) {
+  return (
+    <group>
+      <WallPanel
+        length={D}
+        position={[HALL.maxX + 0.15, 0, -D / 2]}
+        ry={-Math.PI / 2}
+        height={inside ? CUT : H}
+        side
+      />
+      {inside &&
+        [
+          [HALL.minX - 0.3, -1],
+          [1, HALL.maxX + 0.3],
+        ].map(([a, b]) => (
+          <WallPanel
+            key={a}
+            length={b! - a!}
+            position={[(a! + b!) / 2, 0, 0]}
+            ry={Math.PI}
+            height={CUT}
+          />
+        ))}
     </group>
   );
 }
@@ -1037,9 +1043,9 @@ export function MahjongHall({
   };
   return (
     <group>
-      <Bake deps={[inside, quality]}>
+      <Bake deps={[quality]}>
         <Floor />
-        <Walls inside={inside} />
+        <Walls />
         <Foyer />
         {TABLES.map((t, i) => (
           <MahjongTable key={i} at={t} number={i + 1} onSelect={pick(`table-${i + 1}`)} />
@@ -1049,6 +1055,16 @@ export function MahjongHall({
         <Elevator onSelect={pick('elevator')} />
         <Decor />
       </Bake>
+      <group visible={!inside}>
+        <Bake deps={[quality]}>
+          <CutWalls inside={false} />
+        </Bake>
+      </group>
+      <group visible={inside}>
+        <Bake deps={[quality]}>
+          <CutWalls inside />
+        </Bake>
+      </group>
       <TileWalls />
       <group position={[A_LE[0], 0, A_LE[1]]} rotation-y={-Math.PI / 2} onClick={pick('a-le')}>
         <Avatar variant="mini_male_e" motion={IDLE} fallback={<Character outfit={A_LE_OUTFIT} />} />

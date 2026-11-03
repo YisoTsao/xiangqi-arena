@@ -94,6 +94,7 @@ export function ChatPanel() {
   const you = useClubNet((s) => s.you);
   const target = useClubNet((s) => s.chatTarget);
   const status = useClubNet((s) => s.status);
+  const outbox = useClubNet((s) => s.outbox);
   const { setChatOpen, setChatTarget, sendChat } = useClubNet.getState();
   const [text, setText] = useState('');
   const [editing, setEditing] = useState(false);
@@ -123,7 +124,7 @@ export function ChatPanel() {
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, open]);
+  }, [messages, outbox, open]);
 
   const submit = () => {
     if (sendChat(text)) setText('');
@@ -228,7 +229,7 @@ export function ChatPanel() {
         className="flex-1 space-y-1.5 overflow-y-auto px-3 py-2"
         data-testid="club-chat-list"
       >
-        {messages.length === 0 && (
+        {messages.length === 0 && outbox.length === 0 && (
           <div className="py-6 text-center text-xs text-[#F2DAB6]/50">
             還沒有人說話，打聲招呼吧！
           </div>
@@ -270,7 +271,33 @@ export function ChatPanel() {
             </div>
           );
         })}
+        {outbox.map((m) => (
+          <div
+            key={m.id}
+            data-testid="club-chat-pending"
+            className={cn(
+              'leading-snug break-words opacity-60',
+              m.to && 'rounded-lg bg-[#8552B8]/20 px-2 py-1',
+            )}
+          >
+            <span className="mr-1 text-[10px] text-[#F2DAB6]/40">等待連線</span>
+            {m.to && <Lock className="mr-1 inline size-3 text-[#c9a8f0]" />}
+            <span className="font-bold">你{m.to && ` → ${m.toName}`}</span>
+            <span className="mx-1 text-[#F2DAB6]/40">:</span>
+            <span>{m.text}</span>
+          </div>
+        ))}
       </div>
+
+      {status !== 'online' && (
+        <div
+          data-testid="club-chat-status"
+          className="border-t border-white/10 px-3 py-1 text-[11px] text-amber-200/80"
+        >
+          {status === 'offline' ? '伺服器還沒連上' : STATUS_TEXT[status]}
+          ，可以先打字，連上後自動送出
+        </div>
+      )}
 
       <form
         className="flex items-center gap-1.5 border-t border-white/10 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
@@ -296,21 +323,22 @@ export function ChatPanel() {
           value={text}
           maxLength={CLUB_CHAT_MAX}
           onChange={(e) => setText(e.target.value)}
-          placeholder={
-            status !== 'online'
-              ? STATUS_TEXT[status]
-              : targetPlayer
-                ? `悄悄對 ${targetPlayer.name} 說…`
-                : '對大家說…（Enter 送出）'
-          }
-          disabled={status !== 'online'}
+          // 注音、倉頡選字時按 Enter 是確認選字，不是送出（Safari 選完字的那下 Enter 是 keyCode 229）
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.nativeEvent.isComposing || e.keyCode === 229)) {
+              e.preventDefault();
+            }
+          }}
+          placeholder={targetPlayer ? `悄悄對 ${targetPlayer.name} 說…` : '對大家說…（Enter 送出）'}
+          enterKeyHint="send"
+          autoComplete="off"
           data-testid="club-chat-input"
           className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-1.5 text-sm text-[#F2DAB6] outline-none placeholder:text-[#F2DAB6]/40 focus:border-[#F2B552] disabled:opacity-60"
         />
         <button
           type="submit"
           aria-label="送出"
-          disabled={status !== 'online' || !text.trim()}
+          disabled={!text.trim()}
           data-testid="club-chat-send"
           className="rounded-xl bg-[#E95B4B] p-2 text-white disabled:opacity-40"
         >

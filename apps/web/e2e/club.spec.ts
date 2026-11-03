@@ -92,3 +92,34 @@ test('走樓梯上 2F 牌桌館入座下棋，離桌後回到 2F', async ({ page
   await expect(root).toHaveAttribute('data-mode', 'walk');
   await expect(page.getByTestId('club-floor')).toContainText('2F 牌桌館');
 });
+
+test('進門不重新編譯 shader，聊天隨時可以打字，手機有搖桿', async ({ page, isMobile }) => {
+  // 要量環境貼圖，得用中畫質；軟體渲染很慢，時間放寬
+  test.setTimeout(300_000);
+  await page.goto('/club?hour=20&q=medium&perf=1');
+  const root = page.getByTestId('club-root');
+  await page.getByTestId('club-enter').click();
+  await expect(root).toHaveAttribute('data-mode', 'walk', { timeout: 60_000 });
+  await expect(page.getByTestId('club-joystick')).toHaveCount(isMobile ? 1 : 0);
+
+  // 走進門：進門那一下不能有新的 shader 要編譯（以前會卡好幾秒才出現室內）
+  const programs = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { __clubGl: { info: { programs: unknown[] } } }).__clubGl.info
+          .programs.length,
+    );
+  await page.waitForTimeout(3000);
+  const before = await programs();
+  await page.getByTestId('club-find-table').click();
+  await expect(page.getByTestId('club-floor')).toHaveCount(1, { timeout: 90_000 });
+  await page.waitForTimeout(2000);
+  expect(await programs()).toBe(before);
+
+  // 聊天輸入框不會被鎖住
+  await page.getByTestId('club-chat-toggle').click();
+  const input = page.getByTestId('club-chat-input');
+  await expect(input).toBeEnabled();
+  await input.fill('你好');
+  await expect(input).toHaveValue('你好');
+});

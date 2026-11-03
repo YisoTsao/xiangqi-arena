@@ -65,11 +65,23 @@ interface ClubNetState {
   unread: number;
   /** 私聊對象；null = 公開 */
   chatTarget: string | null;
+  /** 還沒連上伺服器時打的訊息：連上後自動送出（最多 OUTBOX_MAX 則） */
+  outbox: PendingChat[];
   setChatOpen: (open: boolean) => void;
   setChatTarget: (id: string | null) => void;
   sendChat: (text: string) => boolean;
   rename: (name: string) => void;
 }
+
+/** 離線時先排著的訊息 */
+export interface PendingChat {
+  id: string;
+  text: string;
+  to?: string;
+  toName?: string;
+}
+/** 伺服器聊天限流一次最多 5 則，排隊的不超過這個數，連上後一次送完才不會被擋 */
+export const OUTBOX_MAX = 5;
 
 export const useClubNet = create<ClubNetState>((set, get) => ({
   status: 'idle',
@@ -81,13 +93,38 @@ export const useClubNet = create<ClubNetState>((set, get) => ({
   chatOpen: false,
   unread: 0,
   chatTarget: null,
-  setChatOpen: (chatOpen) => set(chatOpen ? { chatOpen, unread: 0 } : { chatOpen }),
+  outbox: [],
+  setChatOpen: (chatOpen) => {
+    set(chatOpen ? { chatOpen, unread: 0 } : { chatOpen });
+    // 打開聊天時若還連不上，馬上再試一次，不用等退避計時器
+    if (chatOpen) retryNow();
+  },
   setChatTarget: (chatTarget) => set({ chatTarget }),
   sendChat: (raw) => {
     const text = raw.trim();
-    if (!text || !room) return false;
-    const to = get().chatTarget;
-    room.send(CLUB_MSG.chat, to && get().players[to] ? { text, to } : { text });
+    if (!text) return false;
+    const { chatTarget: to, players } = get();
+    const target = to ? players[to] : undefined;
+    if (room && get().status === 'online') {
+      room.send(CLUB_MSG.chat, target ? { text, to: target.id } : { text });
+      return true;
+    }
+    // 還沒連上（伺服器剛睡醒、網路斷線）：先排著，連上後自動送出；輸入框永遠可以打字
+    if (get().outbox.length >= OUTBOX_MAX) {
+      systemLine('還沒連上伺服器，訊息先排著，連上後再說吧。');
+      return false;
+    }
+    set((s) => ({
+      outbox: [
+        ...s.outbox,
+        {
+          id: `out-${Date.now()}-${Math.random()}`,
+          text,
+          ...(target ? { to: target.id, toName: target.name } : {}),
+        },
+      ],
+    }));
+    retryNow();
     return true;
   },
   rename: (raw) => {
@@ -213,6 +250,7 @@ function bind(r: Room): void {
       // 重連時保留已收到的私聊，公開紀錄以伺服器為準
       messages: mergeMessages(w.history, s.messages),
     }));
+    flushOutbox(r);
   });
   r.onMessage(CLUB_MSG.joined, (p: ClubPlayer) => {
     upsertRemote(p);
@@ -265,7 +303,10 @@ function bind(r: Room): void {
     }
   });
   r.onDrop(() => useClubNet.setState({ status: 'reconnecting' }));
-  r.onReconnect(() => useClubNet.setState({ status: 'online' }));
+  r.onReconnect(() => {
+    useClubNet.setState({ status: 'online' });
+    flushOutbox(r);
+  });
   r.onLeave(() => {
     if (room !== r) return;
     room = null;
@@ -278,6 +319,25 @@ function bind(r: Room): void {
     });
     if (users > 0) scheduleRetry();
   });
+}
+
+/** 連上之後把離線時打的訊息送出去（私聊對象已經離開的話改成公開） */
+function flushOutbox(r: Room): void {
+  const { outbox, players } = useClubNet.getState();
+  if (outbox.length === 0) return;
+  useClubNet.setState({ outbox: [] });
+  for (const m of outbox) {
+    r.send(CLUB_MSG.chat, m.to && players[m.to] ? { text: m.text, to: m.to } : { text: m.text });
+  }
+}
+
+/** 使用者正在等（打開聊天、送出訊息）：不等退避計時器，馬上重連 */
+function retryNow(): void {
+  if (room || connecting || users === 0) return;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  retries = 0;
+  void connect();
 }
 
 function mergeMessages(history: ClubChatMessage[], current: ClubChatMessage[]): ClubChatMessage[] {
@@ -394,7 +454,14 @@ export function joinClubLobby(): () => void {
     const r = room;
     room = null;
     remotes.clear();
-    useClubNet.setState({ status: 'idle', players: {}, tableRooms: {}, you: null, bubbles: {} });
+    useClubNet.setState({
+      status: 'idle',
+      players: {},
+      tableRooms: {},
+      you: null,
+      bubbles: {},
+      outbox: [],
+    });
     if (r) void r.leave(true).catch(() => undefined);
   };
 }

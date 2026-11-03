@@ -186,11 +186,18 @@ export const OCCLUDERS_OUTSIDE: readonly Occluder[] = [
   { ...box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, 0.15), top: 14.4 },
 ];
 
-/** 在室內時：只有四面牆（剖面娃娃屋沒有天花板，鏡頭高過牆就能往下看） */
+/** 室內時，靠鏡頭的正面牆與右牆切成這個高度（剖面娃娃屋，1F、2F 一樣） */
+export const INTERIOR_CUT = 0.9;
+
+/**
+ * 在室內時：四面牆（剖面娃娃屋沒有天花板，鏡頭高過牆就能往下看）。
+ * 正面牆與右牆在室內只有 INTERIOR_CUT 高，碰撞高度要跟畫面一致：
+ * 以前當成整面牆，一進門鏡頭就被「看不見的牆」擋住、一下子拉到角色背後，出門又彈回去。
+ */
 export const OCCLUDERS_INSIDE: readonly Occluder[] = [
-  { ...box(HALL.minX - WALL, HALL.maxX + WALL, -WALL / 2, WALL / 2), top: HALL.height },
+  { ...box(HALL.minX - WALL, HALL.maxX + WALL, -WALL / 2, WALL / 2), top: INTERIOR_CUT },
   { ...box(HALL.minX - WALL, HALL.minX, HALL.minZ - WALL, 0), top: HALL.height },
-  { ...box(HALL.maxX, HALL.maxX + WALL, HALL.minZ - WALL, 0), top: HALL.height },
+  { ...box(HALL.maxX, HALL.maxX + WALL, HALL.minZ - WALL, 0), top: INTERIOR_CUT },
   { ...box(HALL.minX - WALL, HALL.maxX + WALL, HALL.minZ - WALL, HALL.minZ), top: HALL.height },
 ];
 
@@ -425,6 +432,14 @@ export function slide(from: Vec2, dx: number, dz: number, floor: Floor = 1): Vec
 /** 室內判定：1F 在館內（過了門口那條線）；2F 一律在室內 */
 export const isInside = ([x, z]: Vec2, floor: Floor = 1): boolean =>
   floor === 2 || (z < 0.3 && z > HALL.minZ - WALL && x > HALL.minX - WALL && x < HALL.maxX + WALL);
+
+/** 出門要多走這麼遠才算到街上（站在門檻上前後晃，畫面不會在室內、室外之間來回跳） */
+export const DOOR_HYSTERESIS = 0.6;
+
+/** 帶遲滯的室內判定：已經在室內時，門口那條線往外推 DOOR_HYSTERESIS 才算出門 */
+export const isInsideSticky = (pos: Vec2, floor: Floor, wasInside: boolean): boolean =>
+  isInside(pos, floor) ||
+  (wasInside && floor === 1 && isInside([pos[0], pos[1] - DOOR_HYSTERESIS], floor));
 
 // ── 點地面尋路（0.5m 格子上的 A*） ─────────────────────
 
