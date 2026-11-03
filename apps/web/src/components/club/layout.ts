@@ -103,10 +103,81 @@ export const DISPLAY_CASE = box(2.6, 4.6, -0.7, -0.25);
 /** 室內大盆栽 */
 export const INDOOR_PLANTS: readonly Vec2[] = [
   [-8.3, -0.8],
-  [5.4, -0.8],
-  [-8.3, -6.8],
+  [2, -0.55],
   [5.6, -11.3],
 ];
+
+// ── 1F 遊樂機台 ────────────────────────────────────────
+//
+// 左牆一排靠牆的機台（面向 +x，人站在走道上玩），右邊玄關擺一台長長的投籃機（人站在西邊往 +x 投）。
+// 每台都是真的能玩的小遊戲（ArcadeScreen.tsx），外觀在 Arcade.tsx。
+
+export type ArcadeGame = 'claw' | 'mole' | 'blaster' | 'bricks' | 'hoops';
+
+export interface ArcadeMachine {
+  game: ArcadeGame;
+  /** 機台名稱（提示與遊戲畫面標題） */
+  name: string;
+  /** 機台底座中心 */
+  at: Vec2;
+  /** 機台正面朝向（弧度，atan2(dx, dz)；π/2 = 面向 +x） */
+  facing: number;
+  /** 寬（左右）、深（前後） */
+  w: number;
+  d: number;
+}
+
+/** 左牆機台的背面貼在牆上，正面在 x = -8.05 */
+const ARCADE_WALL_X = HALL.minX + 0.5;
+export const ARCADE_MACHINES: readonly ArcadeMachine[] = [
+  {
+    game: 'claw',
+    name: '幸運夾娃娃',
+    at: [ARCADE_WALL_X - 0.05, -3],
+    facing: Math.PI / 2,
+    w: 1,
+    d: 0.9,
+  },
+  {
+    game: 'mole',
+    name: '敲敲地鼠',
+    at: [ARCADE_WALL_X, -4.4],
+    facing: Math.PI / 2,
+    w: 1.05,
+    d: 0.8,
+  },
+  {
+    game: 'blaster',
+    name: '星際巡航',
+    at: [ARCADE_WALL_X, -5.65],
+    facing: Math.PI / 2,
+    w: 0.8,
+    d: 0.8,
+  },
+  {
+    game: 'bricks',
+    name: '磚塊爆破',
+    at: [ARCADE_WALL_X, -6.7],
+    facing: Math.PI / 2,
+    w: 0.8,
+    d: 0.8,
+  },
+  { game: 'hoops', name: '街頭投籃', at: [7.25, -1.15], facing: -Math.PI / 2, w: 2.9, d: 1 },
+];
+
+/** 機台佔地（facing 只會是 ±π/2 或 0／π，依朝向決定哪一邊是寬） */
+export function arcadeBox(m: ArcadeMachine): Box {
+  const sideways = Math.abs(Math.sin(m.facing)) > 0.5;
+  // 投籃機是「長的那邊朝前」：人站在短邊，球道往 +x 延伸
+  const [w, d] = m.game === 'hoops' ? [m.d, m.w] : [m.w, m.d];
+  return sideways ? centered(m.at[0], m.at[1], d, w) : centered(m.at[0], m.at[1], w, d);
+}
+
+/** 玩機台時站的位置：正面再往前一步 */
+export function arcadeStandOf(m: ArcadeMachine): Vec2 {
+  const reach = (m.game === 'hoops' ? m.w : m.d) / 2 + 0.6;
+  return [m.at[0] + Math.sin(m.facing) * reach, m.at[1] + Math.cos(m.facing) * reach];
+}
 
 // ── 街口 ───────────────────────────────────────────────
 
@@ -160,6 +231,7 @@ export const COLLIDERS: readonly Box[] = [
   SHOE_CABINET,
   DISPLAY_CASE,
   ...INDOOR_PLANTS.map((p) => centered(p[0], p[1], 0.6, 0.6)),
+  ...ARCADE_MACHINES.map(arcadeBox),
   // 街上
   ...PLANTERS,
   BENCH,
@@ -280,7 +352,7 @@ export const collidersOf = (floor: Floor): readonly Box[] =>
 // ── 互動點 ─────────────────────────────────────────────
 
 export type InteractableKind =
-  'table' | 'chess' | 'cards' | 'npc' | 'host' | 'stairs' | 'stairsDown' | 'elevator';
+  'table' | 'chess' | 'cards' | 'npc' | 'host' | 'stairs' | 'stairsDown' | 'elevator' | 'arcade';
 
 export interface Interactable {
   id: string;
@@ -294,6 +366,8 @@ export interface Interactable {
   approach: Vec2;
   /** 棋桌的模式（大盤象棋／暗棋） */
   mode?: 'classic' | 'banqi';
+  /** 遊樂機台的遊戲 */
+  game?: ArcadeGame;
 }
 
 export const INTERACTABLES: readonly Interactable[] = [
@@ -329,6 +403,15 @@ export const INTERACTABLES: readonly Interactable[] = [
     label: '搭電梯',
     approach: [7.5, -9.7],
   },
+  ...ARCADE_MACHINES.map((m): Interactable => ({
+    id: `arcade-${m.game}`,
+    kind: 'arcade',
+    at: arcadeStandOf(m),
+    radius: 0.75,
+    label: `玩「${m.name}」`,
+    approach: arcadeStandOf(m),
+    game: m.game,
+  })),
 ];
 
 /** 2F 牌桌館的互動點；桌號接著 1F 往下編，id 不和 1F 重複 */

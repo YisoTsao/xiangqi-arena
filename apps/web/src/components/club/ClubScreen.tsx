@@ -18,7 +18,9 @@ import { Button } from '../ui/button';
 import { DAY_PHASE_LABELS, dayPhaseOf, formatGameTime, gameHourAt } from './clock';
 import {
   ALL_INTERACTABLES,
+  ARCADE_MACHINES,
   ELEVATOR_LANDING,
+  arcadeStandOf,
   STAIRS_LANDING_2F,
   isInside,
   type Floor,
@@ -38,6 +40,7 @@ import {
 import { ChatPanel, OnlineCount } from './ChatPanel';
 import { PresenceOverlay } from './PresenceOverlay';
 import { ClubTableScreen } from './ClubTableScreen';
+import { ArcadeScreen } from './ArcadeScreen';
 import { isTableFull, joinClubLobby, seatedAt, useClubNet } from './net';
 import { clubTableCapacity } from '@xiangqi-arena/game-protocol';
 import { useSettings } from '@/lib/settings';
@@ -68,6 +71,14 @@ const SPAWNS: Record<string, { pos: [number, number]; yaw: number; floor?: Floor
   hall: { pos: [-0.4, -6.8], yaw: Math.PI },
   door: { pos: [0, -1.2], yaw: Math.PI },
   table: { pos: [-2, -3.9], yaw: Math.PI },
+  // 1F 遊樂機台區（站在中間的走道上看整排機台）；arcade-claw 等直接站在該機台前
+  arcade: { pos: [-6.9, -4.9], yaw: -Math.PI / 2 },
+  ...Object.fromEntries(
+    ARCADE_MACHINES.map((m) => [
+      `arcade-${m.game}`,
+      { pos: [...arcadeStandOf(m)] as [number, number], yaw: m.facing + Math.PI },
+    ]),
+  ),
   stairs: { pos: [-8.15, -7.9], yaw: Math.PI },
   elevator: { pos: [7.5, -9.7], yaw: Math.PI },
   '2f': { pos: [0.2, -6], yaw: Math.PI, floor: 2 },
@@ -187,6 +198,7 @@ const ACT_LABELS: Record<Interactable['kind'], string> = {
   stairs: '上樓',
   stairsDown: '下樓',
   elevator: '搭乘',
+  arcade: '投幣',
 };
 
 /** 電梯樓層面板 */
@@ -278,7 +290,8 @@ export function ClubScreen() {
   const bubble = useClub((s) => s.bubble);
   const seatedAt = useClub((s) => s.seatedAt);
   const floor = useClub((s) => s.floor);
-  const { setMode, sit, stand, say, reset, travel } = useClub.getState();
+  const arcade = useClub((s) => s.arcade);
+  const { setMode, sit, stand, say, reset, travel, playArcade, quitArcade } = useClub.getState();
   const [elevatorOpen, setElevatorOpen] = useState(false);
   const qualitySetting = useSettings((s) => s.quality);
   const [webgl, setWebgl] = useState<boolean | null>(null);
@@ -374,7 +387,20 @@ export function ClubScreen() {
       case 'elevator':
         setElevatorOpen((o) => !o);
         break;
+      case 'arcade': {
+        const m = ARCADE_MACHINES.find((x) => x.game === it.game);
+        if (!m) break;
+        // 轉身面向機台
+        player.yaw = m.facing + Math.PI;
+        playArcade(m.game);
+        break;
+      }
     }
+  };
+
+  const leaveArcade = (best: number | null) => {
+    quitArcade();
+    if (best !== null) say('阿樂', `${best} 分！破你自己的紀錄了，厲害喔！`);
   };
 
   // E／Enter／空白鍵：和附近的東西互動
@@ -516,6 +542,8 @@ export function ClubScreen() {
       />
 
       {mode !== 'intro' && <ChatPanel />}
+
+      {mode === 'arcade' && arcade && <ArcadeScreen game={arcade} onExit={leaveArcade} />}
 
       {mode === 'seated' && table && (
         <div
