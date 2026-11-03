@@ -21,7 +21,11 @@ import {
   slide,
   standPointOf,
   BOUNDS,
+  ARCADE_MACHINES,
+  arcadeBox,
+  arcadeStandOf,
 } from './layout';
+import { ARCADE_SPECS } from './arcadeGames';
 import { DISTRICT, SIDE_STREET_X, colliderOf } from './district';
 
 describe('暮光遊樂館配置', () => {
@@ -227,5 +231,48 @@ describe('樂町街區', () => {
     expect(right.top).toBe(INTERIOR_CUT);
     // 鏡頭看的點（胸口 1.15m）比切低的牆高，往前上方看出去不會撞牆
     expect(INTERIOR_CUT).toBeLessThan(1.15);
+  });
+});
+
+describe('1F 遊樂機台', () => {
+  it('每台機台都在館內、站位不和機台重疊，玩完站位就是互動點', () => {
+    for (const m of ARCADE_MACHINES) {
+      const b = arcadeBox(m);
+      expect(b.minX).toBeGreaterThanOrEqual(-9);
+      expect(b.maxX).toBeLessThanOrEqual(9);
+      expect(b.minZ).toBeGreaterThanOrEqual(-12);
+      expect(b.maxZ).toBeLessThanOrEqual(0);
+      const at = arcadeStandOf(m);
+      expect(isFree(...at), m.game).toBe(true);
+      expect(nearestInteractable(at)?.game).toBe(m.game);
+    }
+    // 2F 上樓梯回來的落腳點不能被機台擋住
+    expect(isFree(...STAIRS_LANDING_2F)).toBe(true);
+  });
+
+  it('每個小遊戲都玩得起來：亂按一通也會正常結束、不會出錯', () => {
+    for (const game of Object.keys(ARCADE_SPECS) as (keyof typeof ARCADE_SPECS)[]) {
+      const run = ARCADE_SPECS[game].create();
+      let t = 0;
+      let seed = 1;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      while (!run.over && t < 600) {
+        const x = rnd() * 360;
+        run.update(1 / 30, {
+          left: rnd() < 0.3,
+          right: rnd() < 0.3,
+          pointer: { x, y: rnd() * 480 },
+          pointerDown: rnd() < 0.5,
+          pointerMoved: true,
+          taps: rnd() < 0.2 ? [{ x, y: 120 + rnd() * 340 }] : [],
+          action: rnd() < 0.1,
+          keys: rnd() < 0.1 ? ['Digit5'] : [],
+        });
+        t += 1 / 30;
+      }
+      expect(run.over, game).toBe(true);
+      expect(Number.isFinite(run.score), game).toBe(true);
+      expect(run.score, game).toBeGreaterThanOrEqual(0);
+    }
   });
 });

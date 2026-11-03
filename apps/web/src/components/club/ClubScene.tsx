@@ -963,7 +963,8 @@ function PerfProbe() {
 const DPR = { low: [1, 1], medium: [1, 1.5], high: [1, 2] } as const;
 
 export function ClubScene({ hour, quality }: { hour?: number; quality: Quality }) {
-  const seated = useClub((s) => s.mode === 'seated');
+  // 坐下打牌或站在機台前玩的時候，3D 場景被蓋住：暫停渲染
+  const seated = useClub((s) => s.mode === 'seated' || s.mode === 'arcade');
   return (
     <Canvas
       dpr={[...DPR[quality]]}

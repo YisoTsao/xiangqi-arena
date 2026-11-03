@@ -7,6 +7,7 @@ import {
   SPAWN,
   findPath,
   interactablesOf,
+  type ArcadeGame,
   type Floor,
   type Interactable,
   type Vec2,
@@ -18,8 +19,9 @@ import {
  * walk：自由走動
  * seated：坐在牌桌或棋桌，對局畫面蓋在場景上
  * travel：走樓梯或搭電梯換樓層（畫面淡出再淡入，期間不能操作）
+ * arcade：站在 1F 的遊樂機台前玩，遊戲畫面蓋在場景上
  */
-export type ClubMode = 'title' | 'intro' | 'walk' | 'seated' | 'travel';
+export type ClubMode = 'title' | 'intro' | 'walk' | 'seated' | 'travel' | 'arcade';
 
 /** 街口天氣：下雨時地面濕亮、會倒映招牌與路燈 */
 export type Weather = 'rain' | 'clear';
@@ -84,6 +86,8 @@ interface ClubState {
   seatedAt: string | null;
   /** NPC 或系統的對白 */
   bubble: { who: string; text: string } | null;
+  /** 正在玩的遊樂機台 */
+  arcade: ArcadeGame | null;
   weather: Weather;
   setWeather: (weather: Weather) => void;
   setMode: (mode: ClubMode) => void;
@@ -93,6 +97,9 @@ interface ClubState {
   travel: (to: Floor, arrive: Vec2, yaw?: number) => void;
   sit: (tableId: string) => void;
   stand: (to: Vec2) => void;
+  /** 開始玩機台／玩完離開（角色留在機台前） */
+  playArcade: (game: ArcadeGame) => void;
+  quitArcade: () => void;
   say: (who: string, text: string) => void;
   reset: () => void;
 }
@@ -109,6 +116,7 @@ export const useClub = create<ClubState>((set, get) => ({
   nearby: null,
   seatedAt: null,
   bubble: null,
+  arcade: null,
   weather: 'rain',
   setWeather: (weather) => set({ weather }),
   setMode: (mode) => set({ mode }),
@@ -140,6 +148,15 @@ export const useClub = create<ClubState>((set, get) => ({
     player.path = [];
     set({ mode: 'walk', seatedAt: null });
   },
+  playArcade: (game) => {
+    if (get().mode !== 'walk') return;
+    player.path = [];
+    set({ mode: 'arcade', arcade: game, bubble: null });
+  },
+  quitArcade: () => {
+    if (get().mode !== 'arcade') return;
+    set({ mode: 'walk', arcade: null });
+  },
   say: (who, text) => set({ bubble: { who, text } }),
   reset: () => {
     if (travelTimer) clearTimeout(travelTimer);
@@ -154,6 +171,7 @@ export const useClub = create<ClubState>((set, get) => ({
       nearby: null,
       seatedAt: null,
       bubble: null,
+      arcade: null,
     });
   },
 }));
