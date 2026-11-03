@@ -12,6 +12,9 @@ import {
   clearLine,
   inputToWorld,
   isInside,
+  isInsideSticky,
+  OCCLUDERS_INSIDE,
+  INTERIOR_CUT,
   findPath,
   isFree,
   nearestInteractable,
@@ -207,6 +210,27 @@ describe('樂町街區', () => {
     findPath([-68, -40], [68, 42]);
     findPath([68, -40], [-68, 42]);
     expect(performance.now() - t0).toBeLessThan(1500);
+  });
+
+  it('站在門檻上前後晃不會在室內、室外之間來回切換', () => {
+    // 從街上走進門：過了門口那條線才算進來
+    expect(isInsideSticky([0, 0.5], 1, false)).toBe(false);
+    expect(isInsideSticky([0, 0.2], 1, false)).toBe(true);
+    // 已經在室內：退回到 0.5 還算室內，要再往外走才算出門
+    expect(isInsideSticky([0, 0.5], 1, true)).toBe(true);
+    expect(isInsideSticky([0, 1.2], 1, true)).toBe(false);
+    // 在街上離門很遠，不管之前怎樣都是室外
+    expect(isInsideSticky([20, 0.5], 1, true)).toBe(false);
+    expect(isInsideSticky([0, 5], 2, false)).toBe(true);
+  });
+
+  it('室內被切低的正面牆與右牆不會擋住鏡頭（碰撞高度與畫面一致）', () => {
+    const front = OCCLUDERS_INSIDE.find((o) => o.minZ < 0 && o.maxZ > 0);
+    const right = OCCLUDERS_INSIDE.reduce((a, b) => (b.maxX > a.maxX ? b : a));
+    expect(front?.top).toBe(INTERIOR_CUT);
+    expect(right.top).toBe(INTERIOR_CUT);
+    // 鏡頭看的點（胸口 1.15m）比切低的牆高，往前上方看出去不會撞牆
+    expect(INTERIOR_CUT).toBeLessThan(1.15);
   });
 });
 

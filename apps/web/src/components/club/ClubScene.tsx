@@ -7,6 +7,7 @@ import {
   BackSide,
   Color,
   Fog,
+  Scene,
   ShaderMaterial,
   Vector3,
   type DirectionalLight,
@@ -31,7 +32,7 @@ import {
   floorY,
   inputToWorld,
   interactablesOf,
-  isInside,
+  isInsideSticky,
   nearestInteractable,
   slide,
   type Occluder,
@@ -41,7 +42,7 @@ import { CardHall } from './CardHall';
 import { MahjongHall } from './MahjongHall';
 import { NeonContext, QualityContext, useQuality, type Quality } from './props';
 import { Street } from './Street';
-import { orbit, player, pointerGuard, transition, useClub, walkTo } from './store';
+import { orbit, player, pointerGuard, stick, transition, useClub, walkTo } from './store';
 
 export const ORBIT_LIMITS = { minPitch: 0.06, maxPitch: 1.38, minDist: 2.2, maxDist: 22 } as const;
 
@@ -156,79 +157,110 @@ function SceneProbe({
   neon: number;
   inside: boolean;
 }) {
+  const scene = useThree((s) => s.scene);
   const floor = useClub((s) => s.floor);
+  // 室外、室內兩張環境貼圖都一直掛著，各自畫到自己的暫存場景裡；進出門只是換掉 scene.environment。
+  // 以前進門才卸掉街景貼圖、重新畫室內貼圖，而且兩張解析度不同（128／64），
+  // 換貼圖時所有 PBR 材質的 shader 都要重新編譯，畫面會卡住一陣子才出現室內。
+  const [outdoor] = useState(() => new Scene());
+  const [hall] = useState(() => new Scene());
   // 天色每 5 秒都會微微變：顏色取粗一點的階再當 key，免得每 5 秒就重建一次環境貼圖（每次重建都會頓一下）
-  const key = `${coarse(sky)}${coarse(horizon)}${neon}${inside}${floor}`;
-  if (inside) return <HallProbe key={key} neon={neon} lamp={floor === 2 ? '#d8f0b0' : '#ffc878'} />;
+  const outKey = `${coarse(sky)}${coarse(horizon)}${neon}`;
+  const hallKey = `${neon}${floor}`;
+  useEffect(() => {
+    const prev = { env: scene.environment, intensity: scene.environmentIntensity };
+    return () => {
+      scene.environment = prev.env;
+      scene.environmentIntensity = prev.intensity;
+    };
+  }, [scene]);
+  useFrame(() => {
+    const src = inside ? hall : outdoor;
+    if (src.environment && scene.environment !== src.environment)
+      scene.environment = src.environment;
+    scene.environmentIntensity = src.environmentIntensity;
+  });
   return (
-    // 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到
-    <Environment
-      key={key}
-      resolution={128}
-      frames={1}
-      environmentIntensity={0.6 * (1 - 0.5 * neon)}
-    >
-      <mesh scale={60}>
-        <sphereGeometry args={[1, 32, 16]} />
-        <meshBasicMaterial color={horizon} side={BackSide} toneMapped={false} />
-      </mesh>
-      <Lightformer
-        form="rect"
-        color={sky}
-        intensity={1.4}
-        position={[0, 25, 0]}
-        rotation-x={Math.PI / 2}
-        scale={[80, 80, 1]}
+    <>
+      {/* 夜晚整體環境光收一點，讓立面暗下來、窗光與招牌跳出來；霓虹色塊本身夠亮，反射仍看得到 */}
+      <Environment
+        key={outKey}
+        scene={outdoor}
+        resolution={PROBE_RES}
+        frames={1}
+        environmentIntensity={0.6 * (1 - 0.5 * neon)}
+      >
+        <mesh scale={60}>
+          <sphereGeometry args={[1, 32, 16]} />
+          <meshBasicMaterial color={horizon} side={BackSide} toneMapped={false} />
+        </mesh>
+        <Lightformer
+          form="rect"
+          color={sky}
+          intensity={1.4}
+          position={[0, 25, 0]}
+          rotation-x={Math.PI / 2}
+          scale={[80, 80, 1]}
+        />
+        {/* 俱樂部這一側的騎樓暖光（從街上看在 -z） */}
+        <Lightformer
+          color="#ffb870"
+          intensity={0.4 + neon * 2.4}
+          position={[0, 1.6, -7]}
+          scale={[50, 2.4, 1]}
+        />
+        {/* 對面店家（鏡頭背後）的燈 */}
+        <Lightformer
+          color="#ffd2a0"
+          intensity={0.2 + neon * 1.2}
+          position={[0, 1.8, 12]}
+          rotation-y={Math.PI}
+          scale={[50, 2, 1]}
+        />
+        {neon > 0.05 && (
+          <>
+            <Lightformer
+              color="#E95B4B"
+              intensity={neon * 3}
+              position={[-3, 4.5, -6]}
+              scale={[7, 1.6, 1]}
+            />
+            <Lightformer
+              color="#8552B8"
+              intensity={neon * 2}
+              position={[5, 8, -6]}
+              scale={[3, 1, 1]}
+            />
+            <Lightformer
+              color="#5CC2C9"
+              intensity={neon * 1.2}
+              position={[-12, 3, -6]}
+              scale={[3, 1, 1]}
+            />
+          </>
+        )}
+      </Environment>
+      <HallProbe
+        key={hallKey}
+        scene={hall}
+        neon={neon}
+        lamp={floor === 2 ? '#d8f0b0' : '#ffc878'}
       />
-      {/* 俱樂部這一側的騎樓暖光（從街上看在 -z） */}
-      <Lightformer
-        color="#ffb870"
-        intensity={0.4 + neon * 2.4}
-        position={[0, 1.6, -7]}
-        scale={[50, 2.4, 1]}
-      />
-      {/* 對面店家（鏡頭背後）的燈 */}
-      <Lightformer
-        color="#ffd2a0"
-        intensity={0.2 + neon * 1.2}
-        position={[0, 1.8, 12]}
-        rotation-y={Math.PI}
-        scale={[50, 2, 1]}
-      />
-      {neon > 0.05 && (
-        <>
-          <Lightformer
-            color="#E95B4B"
-            intensity={neon * 3}
-            position={[-3, 4.5, -6]}
-            scale={[7, 1.6, 1]}
-          />
-          <Lightformer
-            color="#8552B8"
-            intensity={neon * 2}
-            position={[5, 8, -6]}
-            scale={[3, 1, 1]}
-          />
-          <Lightformer
-            color="#5CC2C9"
-            intensity={neon * 1.2}
-            position={[-12, 3, -6]}
-            scale={[3, 1, 1]}
-          />
-        </>
-      )}
-    </Environment>
+    </>
   );
 }
+
+/** 兩張環境貼圖用同一個解析度：轉成 PMREM 後尺寸相同，換貼圖時材質不用重新編譯 */
+const PROBE_RES = 128;
 
 /**
  * 1F 室內的環境貼圖：深木色的牆與地板、暖色天花、六盞桌燈的亮塊，和紙窗透進來的光
  * （白天暖白、夜晚冷藍）。漆面木頭、茶具、麻將牌映出的是室內的燈，而不是街上的天空。
  */
-function HallProbe({ neon, lamp }: { neon: number; lamp: string }) {
+function HallProbe({ neon, lamp, scene }: { neon: number; lamp: string; scene: Scene }) {
   const night = neon > 0.5;
   return (
-    <Environment resolution={64} frames={1} environmentIntensity={0.55}>
+    <Environment scene={scene} resolution={PROBE_RES} frames={1} environmentIntensity={0.55}>
       <mesh scale={30}>
         <sphereGeometry args={[1, 24, 12]} />
         <meshBasicMaterial color="#3a2618" side={BackSide} toneMapped={false} />
@@ -481,10 +513,14 @@ function Player() {
 
     const now = performance.now();
     const frame = Math.min(delta, 0.3);
-    const input = keyInput(now, Math.max(1, frame * 1000));
+    const keys = keyInput(now, Math.max(1, frame * 1000));
+    // 鍵盤與手機搖桿相加（長度最多 1）
+    let input: [number, number] = [keys[0] + stick.x, keys[1] + stick.z];
+    const len = Math.hypot(input[0], input[1]);
+    if (len > 1) input = [input[0] / len, input[1] / len];
     lastFrameAt.current = now;
-    // 按住 Shift 跑步；點很遠的地方（剩下的路超過 10m）也自動用跑的
-    player.running = runKeys.size > 0 || remainingPath() > 10;
+    // 按住 Shift 或搖桿推到底就跑步；點很遠的地方（剩下的路超過 10m）也自動用跑的
+    player.running = runKeys.size > 0 || (stick.run && len > 0) || remainingPath() > 10;
     if (club.mode === 'walk') {
       // 幀率低時分成小步走，速度不變也不會穿牆
       let left = frame;
@@ -494,7 +530,7 @@ function Player() {
         if (stepPlayer(h, input)) moving = true;
       }
       club.setNearby(nearestInteractable(player.pos, club.floor));
-      club.setInside(isInside(player.pos, club.floor));
+      club.setInside(isInsideSticky(player.pos, club.floor, club.inside));
     }
 
     // 一兩格沒移動（例如剛好抵達中途點）不要馬上切回站立動畫
@@ -747,10 +783,13 @@ function CameraRig() {
       inside ? OCCLUDERS_INSIDE : OCCLUDERS_OUTSIDE,
       y0,
     );
+    // 被牆擋住時拉近要快（不然會看到牆裡面），但不要一格就跳過去：碰撞是分段取樣的，
+    // 角色貼著牆走時可用距離會一階一階變，直接套用鏡頭就會一跳一跳。放遠則慢慢來。
     dist.current =
       allowed < dist.current
-        ? allowed
+        ? Math.max(allowed, dist.current + (allowed - dist.current) * (1 - Math.exp(-dt * 18)))
         : dist.current + (allowed - dist.current) * (1 - Math.exp(-dt * 4));
+    if (dist.current - allowed > 1.5) dist.current = allowed + 1.5;
     const followPos = tmpPos.current.copy(followLook).addScaledVector(dir, dist.current);
     // 不鑽到地板下
     followPos.y = Math.max(followPos.y, y0 + 0.35);
@@ -888,6 +927,8 @@ function PerfProbe() {
   useEffect(() => {
     if (!enabled) return;
     gl.info.autoReset = false;
+    // 量測用：E2E 可以比對進門前後新編譯了哪些 shader（gl.info.programs）
+    (window as unknown as { __clubGl?: unknown }).__clubGl = gl;
     return () => {
       gl.info.autoReset = true;
     };

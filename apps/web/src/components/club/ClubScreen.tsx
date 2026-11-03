@@ -39,6 +39,7 @@ import {
 } from './store';
 import { ChatPanel, OnlineCount } from './ChatPanel';
 import { PresenceOverlay } from './PresenceOverlay';
+import { Joystick, useTouchDevice } from './Joystick';
 import { ClubTableScreen } from './ClubTableScreen';
 import { ArcadeScreen } from './ArcadeScreen';
 import { isTableFull, joinClubLobby, seatedAt, useClubNet } from './net';
@@ -299,6 +300,7 @@ export function ClubScreen() {
   // 網址加 ?q=high／medium／low 可以固定畫質（截圖比對用）
   const [qualityOverride, setQualityOverride] = useState<'low' | 'medium' | 'high' | null>(null);
   const hour = useGameHour(override);
+  const touch = useTouchDevice();
 
   // 一個視窗就是一個角色：進到 /club 就連上大廳，大家互相看得到
   useEffect(() => joinClubLobby(), []);
@@ -491,7 +493,15 @@ export function ClubScreen() {
             </Link>
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {touch && <Joystick />}
+
+          <div
+            className={cn(
+              'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]',
+              // 手機：左下角留給搖桿，提示與按鈕靠右
+              touch ? 'items-end pl-40' : 'items-center',
+            )}
+          >
             {bubble && (
               <div
                 data-testid="club-bubble"
@@ -526,8 +536,10 @@ export function ClubScreen() {
               <span className="hidden sm:inline">
                 WASD 走路、Shift 跑步、拖曳轉視角、滾輪縮放，
               </span>
-              <span className="sm:hidden">拖曳轉視角、雙指縮放，</span>
-              點地面走過去
+              <span className="sm:hidden">
+                {touch ? '搖桿走路，拖曳轉視角、雙指縮放' : '拖曳轉視角、雙指縮放，點地面走過去'}
+              </span>
+              <span className="hidden sm:inline">點地面走過去</span>
             </div>
           </div>
         </>

@@ -64,6 +64,12 @@ function sessionColor(): string {
 }
 
 /**
+ * 手機虛擬搖桿的輸入：x 往右、z 往下（和方向鍵一樣，-z 是「往畫面裡面走」），長度 0～1。
+ * 推到底（run）就用跑的。Player 每格讀，不進 React state。
+ */
+export const stick = { x: 0, z: 0, run: false };
+
+/**
  * 室內外過渡：0 = 街上、1 = 室內，進出門時約 0.6 秒內平滑變化（DayNight 每格更新）。
  * 太陽、天光、霧與室內燈都依它內插，進門不會一格之內突然變暗或變亮。
  */
