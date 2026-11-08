@@ -1,10 +1,11 @@
-# 定期呼叫 Render 遊戲伺服器的 /healthz，避免免費方案閒置 15 分鐘後休眠。
-# 網址可用 Repository variable RENDER_GAME_SERVER_URL 覆寫，見 docs/DEPLOYMENT.md §3.5。
+# 定期呼叫 Render 遊戲伺服器的 /healthz，減少免費方案閒置 15 分鐘後休眠的機會。
+# 注意：GitHub 排程不保證準時，實測常常隔好幾個小時才跑一次，所以這個 workflow
+# 不能保證服務不休眠。要真正不間斷請改用 Render 付費方案，見 docs/DEPLOYMENT.md §3.5。
+# 網址可用 Repository variable RENDER_GAME_SERVER_URL 覆寫。
 name: Render keep-alive
 
 on:
   schedule:
-    # 每 10 分鐘一次（GitHub 排程在尖峰時段可能延遲幾分鐘）
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
@@ -27,13 +28,27 @@ jobs:
           url="${BASE_URL%/}/healthz"
           # 冷啟動可能要 30–60 秒，所以 timeout 給長一點並重試
           for attempt in 1 2 3; do
-            status=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 90 "$url" || echo 000)
+            status=$(curl -sS -D /tmp/headers -o /tmp/body -w '%{http_code}' --max-time 90 "$url" || echo 000)
             echo "attempt $attempt: HTTP $status"
             if [ "$status" = "200" ]; then
               cat /tmp/body; echo
               exit 0
             fi
-            sleep $((attempt * 15))
+            if [ "$status" = "429" ]; then
+              # 429 是 Render 前端（不是我們的程式）拒絕 GitHub 共用 IP 的請求，
+              # 代表服務網址存在。依 Retry-After 等待，最多 60 秒，避免越重試越被擋。
+              retry_after=$(grep -i '^retry-after:' /tmp/headers | tr -dc '0-9' || true)
+              wait=${retry_after:-30}; [ "$wait" -gt 60 ] && wait=60
+              sleep "$wait"
+            else
+              sleep $((attempt * 15))
+            fi
           done
-          echo "::error::$url 回傳 HTTP $status，請確認 Render 服務網址或服務是否被停用"
+          echo "--- 最後一次回應 headers ---"; cat /tmp/headers 2>/dev/null || true
+          echo "--- 最後一次回應 body（前 500 字）---"; head -c 500 /tmp/body 2>/dev/null || true; echo
+          if [ "$status" = "429" ]; then
+            echo "::warning::$url 被 Render 限流（HTTP 429）。這不代表服務被停用，本次略過；若玩家也連不上，請到 Render 後台確認服務狀態。"
+            exit 0
+          fi
+          echo "::error::$url 回傳 HTTP $status，請到 Render 後台確認服務是否 Suspended、網址是否正確"
           exit 1
