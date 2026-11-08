@@ -114,7 +114,16 @@ Supabase 免費方案若 7 天沒有任何活動會自動暫停。`.github/workf
 ### 3.5 Render 遊戲伺服器保持清醒
 
 Render 免費方案的 web service 閒置 15 分鐘就會休眠，下一個玩家連線要等 30–60 秒冷啟動。
-`.github/workflows/render-keepalive.yml` 每 10 分鐘呼叫一次 `/healthz` 讓它保持清醒。
+`.github/workflows/render-keepalive.yml` 排程每 10 分鐘呼叫一次 `/healthz`，但有兩個限制：
+
+- **GitHub 排程不準時**：實測這個 repo 的排程大約 4–7 小時才真正跑一次，中間服務照樣會休眠。
+- **Render 可能回 HTTP 429**：GitHub Actions 的 IP 是大家共用的，Render 前端會限流。
+  workflow 遇到 429 只會留 warning、不會讓 CI 變紅；429 不代表服務被停用。
+
+**要真正不間斷，請把 Render 服務改成付費的 Starter 方案**（Render 後台 → 服務 → Settings →
+Instance Type），付費方案不會休眠，這個 keep-alive workflow 也就不需要了。
+不想付費的話，可以改用外部監控服務（例如 UptimeRobot、cron-job.org）每 5–10 分鐘打一次
+`/healthz`，比 GitHub 排程準時，但仍受免費方案每月 750 小時上限限制。
 
 - 預設網址是 `https://xiangqi-arena-game-server.onrender.com`。若 Render 給的網址不同，
   到 Settings → Secrets and variables → Actions → **Variables** 新增 `RENDER_GAME_SERVER_URL`
